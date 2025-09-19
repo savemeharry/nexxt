@@ -5,8 +5,22 @@ import { GoogleGenAI } from "@google/genai";
 import { ResearchMode } from '../types';
 import type { MarketAnalysisResult, GroundingSource, BusinessPlan, Stat, ComparisonTable, ChartData, ChatMessage, SolutionCard, CompanyCardData, Asset, AttachedFile, FileOperation, CreateGoalOperation, CreateTaskOperation, Task, Goal, EditTaskOperation, AddSubtaskOperation, SetTaskStatusOperation, TeamMemberSuggestion } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Lazy client init to avoid hard-failing when API key is not set
+const getApiKey = (): string | undefined => {
+  // Prefer Vite env during build/runtime; fallback to process.env for SSR/tests
+  const viteKey = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) as string | undefined;
+  const nodeKey = (process as any)?.env?.GEMINI_API_KEY || (process as any)?.env?.API_KEY;
+  return viteKey || nodeKey || undefined;
+};
 
+let cachedAi: GoogleGenAI | null = null;
+const getAIClient = (): GoogleGenAI | null => {
+  if (cachedAi) return cachedAi;
+  const key = getApiKey();
+  if (!key) return null;
+  cachedAi = new GoogleGenAI({ apiKey: key });
+  return cachedAi;
+};
 
 const generateAnalyzeNichePrompt = (topic: string, context?: CompanyCardData | null): string => {
   const contextPrompt = context 
@@ -101,7 +115,6 @@ A brief, one-sentence summary of why "${topic}" is a promising field for new ven
 [BUSINESS_IDEAS_END]
 `;
 };
-
 
 const generateBusinessPlanPrompt = (marketContext: string, businessIdea: string): string => {
   return `
@@ -452,7 +465,6 @@ Your Comprehensive Answer:
 `;
 };
 
-
 const parseMarketAnalysis = (text: string): Omit<MarketAnalysisResult, 'id' | 'topic' | 'mode' | 'sources'> => {
     const getSection = (startTag: string, endTag: string) => text.split(startTag)[1]?.split(endTag)[0]?.trim() ?? '';
 
@@ -513,14 +525,30 @@ const parseBusinessPlan = (text: string): BusinessPlan => {
     };
 };
 
-
 export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, context: CompanyCardData | null = null): Promise<Omit<MarketAnalysisResult, 'id' | 'topic' | 'mode'>> => {
+  const client = getAIClient();
+  if (!client) {
+    // Placeholder so UI loads without API key
+    return {
+      generatedTitle: 'Demo Report (API key not set)',
+      executiveSummary: 'Включён демо-режим. Добавьте API ключ, чтобы получить реальный анализ.',
+      marketOverview: '',
+      marketStats: [],
+      chartData: null,
+      keyTrends: '',
+      targetAudience: '',
+      competitorAnalysis: '',
+      competitorTable: null,
+      swotAnalysis: '',
+      businessIdeas: ''
+    };
+  }
   try {
     const prompt = mode === ResearchMode.Analyze 
         ? generateAnalyzeNichePrompt(topic, context)
         : generateExploreIdeasPrompt(topic);
     
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt,
         config: {
@@ -528,9 +556,9 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
         },
     });
 
-    const parsedContent = parseMarketAnalysis(response.text);
+    const parsedContent = parseMarketAnalysis((response as any).text);
 
-    const rawSources = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+    const rawSources = (response as any).candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
     const sources: GroundingSource[] = rawSources
       .map((chunk: any) => ({
           uri: chunk.web?.uri ?? '',
@@ -541,37 +569,49 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
           index === self.findIndex((s) => s.uri === source.uri)
       );
 
-    return { ...parsedContent, sources };
+    return { ...parsedContent, sources } as any;
   } catch (error) {
     console.error("Error fetching market analysis from Gemini API:", error);
     throw new Error("Failed to generate market analysis. The AI model may be unavailable.");
   }
 };
 
-
 export const fetchBusinessPlan = async (marketContext: string, businessIdea: string): Promise<BusinessPlan> => {
+  const client = getAIClient();
+  if (!client) {
+    return {
+      missionStatement: 'Демо-режим: добавьте API ключ, чтобы получить план.',
+      valueProposition: '',
+      marketingStrategy: '',
+      kpis: '',
+      actionPlan: ''
+    };
+  }
   try {
     const prompt = generateBusinessPlanPrompt(marketContext, businessIdea);
-    const response = await ai.models.generateContent({
+    const response = await (client as any).models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt,
     });
-    return parseBusinessPlan(response.text);
+    return parseBusinessPlan((response as any).text);
   } catch (error) {
     console.error("Error fetching business plan:", error);
     throw new Error("Failed to generate the business plan.");
   }
 };
 
-
 export const fetchFollowUp = async (
     question: string, 
     context: string, 
     chatHistory: ChatMessage[]
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
+    const client = getAIClient();
+    if (!client) {
+        return { text: 'Демо-режим: API ключ не задан. Укажите VITE_GEMINI_API_KEY и перезапустите билд.' };
+    }
     try {
         const prompt = generateFollowUpPrompt(question, context, chatHistory);
-        const response = await ai.models.generateContent({
+        const response = await (client as any).models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
@@ -579,7 +619,7 @@ export const fetchFollowUp = async (
             },
         });
         
-        let text = response.text ?? '';
+        let text = (response as any).text ?? '';
 
         let cards: SolutionCard[] | undefined = undefined;
         let fileOperations: FileOperation[] | undefined = undefined;
@@ -594,7 +634,6 @@ export const fetchFollowUp = async (
         const clarificationEndTag = '[PROJECT_CLARIFICATION_END]';
         const teamStartTag = '[TEAM_SUGGESTIONS_START]';
         const teamEndTag = '[TEAM_SUGGESTIONS_END]';
-
 
         if (text.includes(cardStartTag) && text.includes(cardEndTag)) {
             const cardJsonRaw = text.split(cardStartTag)[1].split(cardEndTag)[0].trim();
