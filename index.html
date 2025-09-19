@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nexxt - Pro Business Copilot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbit:wght@400&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+    <script async defer src="https://apis.google.com/js/api.js"></script>
+    <script async defer src="https://accounts.google.com/gsi/client"></script>
+    <style>
+      /* Base styles */
+      .wysiwyg-editor:focus { outline: none; }
+      .wysiwyg-editor h1 { font-size: 2em; font-weight: bold; margin-top: 0.67em; margin-bottom: 0.67em; }
+      .wysiwyg-editor h2 { font-size: 1.5em; font-weight: bold; margin-top: 0.83em; margin-bottom: 0.83em; }
+      .wysiwyg-editor h3 { font-size: 1.17em; font-weight: bold; margin-top: 1em; margin-bottom: 1em; }
+      .wysiwyg-editor ul { list-style-type: disc; padding-left: 2rem; }
+      .wysiwyg-editor li { margin-bottom: 0.5rem; }
+
+      /* Light theme WYSIWYG */
+      .light .wysiwyg-editor blockquote { 
+        border-left: 4px solid #e5e5e5; /* neutral-200 */
+        padding-left: 1rem; margin-left: 0; 
+        color: #737373; /* neutral-500 */
+        font-style: italic; 
+      }
+      
+      /* Dark & Rockstar theme WYSIWYG */
+      .dark .wysiwyg-editor blockquote, .rockstar .wysiwyg-editor blockquote {
+        border-left: 4px solid #3b82f6; /* brand-500 */
+        padding-left: 1rem; margin-left: 0; 
+        color: #a3a3a3; /* neutral-400 */
+        font-style: italic; 
+      }
+      .rockstar .wysiwyg-editor blockquote {
+         border-left: 4px solid #c026d3; /* rockstar-purple */
+      }
+
+      /* Thinking Animation Styles */
+      .thinking-animation {
+          position: relative;
+          width: 24px;
+          height: 24px;
+          animation: thinking-container-anim 5s infinite;
+      }
+
+      .thinking-animation .dot {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 4px;
+          height: 4px;
+          margin-top: -2px;
+          margin-left: -2px;
+          border-radius: 50%;
+      }
+      .light .thinking-animation .dot { background-color: #60a5fa; } /* brand-400 */
+      .dark .thinking-animation .dot { background-color: #93c5fd; } /* brand-300 */
+      .rockstar .thinking-animation .dot { background-color: #f472b6; }
+
+
+      .thinking-animation .dot1 { animation: dot1-anim 5s ease-in-out infinite; }
+      .thinking-animation .dot2 { animation: dot2-anim 5s ease-in-out infinite; }
+      .thinking-animation .dot3 { animation: dot3-anim 5s ease-in-out infinite; }
+
+      @keyframes thinking-container-anim {
+          50%, 80% { transform: rotate(360deg); }
+          100% { transform: rotate(360deg); }
+      }
+      @keyframes dot1-anim {
+          0%   { transform: translateX(-8px) translateY(0); }
+          10%  { transform: translateX(-8px) translateY(-4px); }
+          20%  { transform: translateX(-8px) translateY(0); }
+          40%  { transform: translateX(-8px) translateY(0); }
+          50%  { transform: translateY(-8px); }
+          80%  { transform: translateY(-8px); }
+          90%  { transform: translateX(-8px) translateY(0); }
+          100% { transform: translateX(-8px) translateY(0); }
+      }
+      @keyframes dot2-anim {
+          0%   { transform: translateX(0) translateY(0); }
+          20%  { transform: translateX(0) translateY(-4px); }
+          30%  { transform: translateX(0) translateY(0); }
+          40%  { transform: translateX(0) translateY(0); }
+          50%  { transform: translateX(-7px) translateY(4px); }
+          80%  { transform: translateX(-7px) translateY(4px); }
+          90%  { transform: translateX(0) translateY(0); }
+          100% { transform: translateX(0) translateY(0); }
+      }
+      @keyframes dot3-anim {
+          0%   { transform: translateX(8px) translateY(0); }
+          30%  { transform: translateX(8px) translateY(-4px); }
+          40%  { transform: translateX(8px) translateY(0); }
+          50%  { transform: translateX(7px) translateY(4px); }
+          80%  { transform: translateX(7px) translateY(4px); }
+          90%  { transform: translateX(8px) translateY(0); }
+          100% { transform: translateX(8px) translateY(0); }
+      }
+
+      /* Animated border for 'Done' column */
+      .done-column-container {
+        position: relative;
+        padding: 1.5px; /* The border thickness */
+        border-radius: 0.5rem; /* rounded-lg */
+        overflow: hidden;
+      }
+      .done-column-container::before {
+          content: '';
+          position: absolute;
+          z-index: -1;
+          top: -50%;
+          left: -50%;
+          width: 200%;
+          height: 200%;
+          background: conic-gradient(
+            from 180deg at 50% 50%,
+            #3b82f6,
+            #ec4899,
+            #facc15,
+            #a855f7,
+            #3b82f6
+          );
+          animation: rotate-gradient 6s linear infinite;
+      }
+
+      @keyframes rotate-gradient {
+          0% {
+              transform: rotate(0deg);
+          }
+          100% {
+              transform: rotate(360deg);
+          }
+      }
+
+      #rockstar-bg {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -20;
+        display: none; /* Hidden by default */
+      }
+      .rockstar #rockstar-bg {
+        display: block; /* Shown only for rockstar theme */
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              'logo': ['Orbit', 'sans-serif'],
+            },
+            colors: {
+              'neutral': {
+                '950': '#0a0a0a', '900': '#121212', '800': '#1f1f1f', '700': '#2e2e2e',
+                '600': '#3d3d3d', '500': '#737373', '400': '#a3a3a3', '300': '#d4d4d4',
+                '200': '#e5e5e5', '100': '#f5f5f5', '50': '#fafafa',
+              },
+              'brand': {
+                '50': '#eff6ff', '100': '#dbeafe', '200': '#bfdbfe', '300': '#93c5fd',
+                '400': '#60a5fa', '500': '#3b82f6', '600': '#2563eb', '700': '#1d4ed8',
+                '800': '#1e40af', '900': '#1e3a8a', '950': '#172554',
+              },
+               'rockstar': {
+                  '50': '#fdf2f8', '100': '#fce7f3', '200': '#fbcfe8', '300': '#f9a8d4',
+                  '400': '#f472b6', '500': '#ec4899', '600': '#db2777', '700': '#be185d',
+                  '800': '#9d174d', '900': '#831843', '950': '#500724',
+                  'purple': '#a855f7', 'cyan': '#22d3ee'
+               }
+            },
+            animation: {
+              'spin-slow': 'spin 4s linear infinite', 'spin-medium': 'spin 7s linear infinite reverse', 'spin-slower': 'spin 11s linear infinite',
+              'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fade-scale-in': 'fadeScaleIn 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards',
+              'scale-in-out': 'scaleInOut 0.2s ease-in-out', 'text-reveal': 'textReveal 1.5s cubic-bezier(0.77, 0, 0.175, 1) 0.5s forwards',
+              'card-deck': 'card-deck-anim 12s infinite',
+            },
+            keyframes: {
+              fadeScaleIn: { '0%': { opacity: 0, transform: 'scale(0.97)' }, '100%': { opacity: 1, transform: 'scale(1)' }, },
+              scaleInOut: { '0%': { opacity: 0, transform: 'scale(0.95)' }, '100%': { opacity: 1, transform: 'scale(1)' }, },
+              textReveal: { '0%': { backgroundPosition: '-200% center' }, '100%': { backgroundPosition: '200% center' }, },
+              'card-deck-anim': {
+                '0%': { opacity: 0, transform: 'translateY(10px) scale(0.98)' },
+                '10%, 90%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+                '100%': { opacity: 0, transform: 'translateY(-10px) scale(0.98)' },
+              },
+            },
+            typography: (theme) => ({
+              DEFAULT: { // Light Theme
+                css: {
+                  '--tw-prose-body': theme('colors.neutral[800]'), '--tw-prose-headings': theme('colors.neutral[900]'),
+                  '--tw-prose-lead': theme('colors.neutral[600]'), '--tw-prose-links': theme('colors.brand[600]'),
+                  '--tw-prose-bold': theme('colors.neutral[900]'), '--tw-prose-counters': theme('colors.neutral[500]'),
+                  '--tw-prose-bullets': theme('colors.neutral[400]'), '--tw-prose-hr': theme('colors.neutral[200]'),
+                  '--tw-prose-quotes': theme('colors.neutral[800]'), '--tw-prose-quote-borders': theme('colors.neutral[300]'),
+                  '--tw-prose-captions': theme('colors.neutral[500]'),
+                  h1: { fontSize: theme('fontSize.2xl'), fontWeight: '700', marginTop: '1em', marginBottom: '0.5em', },
+                  h2: { fontSize: theme('fontSize.xl'), fontWeight: '600', marginTop: '1.25em', marginBottom: '0.5em', },
+                  h3: { fontSize: theme('fontSize.lg'), fontWeight: '600', marginTop: '1.5em', marginBottom: '0.5em', },
+                  blockquote: { borderLeftWidth: '0.25rem', paddingLeft: theme('spacing.4'), marginLeft: '0', marginRight: '0', fontStyle: 'italic', color: theme('colors.neutral.600'), },
+                  ul: { listStyleType: 'disc', paddingLeft: '1.5em', }, li: { marginTop: '0.25em', marginBottom: '0.25em', },
+                  p: { fontSize: theme('fontSize.base'), lineHeight: '1.75', marginTop: '0', marginBottom: theme('spacing.4'), },
+                  'ul > li::marker': { color: theme('colors.neutral.400'), }, 'ol > li::marker': { color: theme('colors.neutral.400'), },
+                },
+              },
+              invert: { // Dark Theme Base
+                css: {
+                  '--tw-prose-body': theme('colors.neutral[300]'), '--tw-prose-headings': theme('colors.neutral[100]'),
+                  '--tw-prose-lead': theme('colors.neutral[400]'), '--tw-prose-links': theme('colors.brand[400]'),
+                  '--tw-prose-bold': theme('colors.neutral[100]'), '--tw-prose-counters': theme('colors.neutral[500]'),
+                  '--tw-prose-bullets': theme('colors.neutral[600]'), '--tw-prose-hr': theme('colors.neutral[700]'),
+                  '--tw-prose-quotes': theme('colors.neutral[200]'), '--tw-prose-quote-borders': theme('colors.neutral[700]'),
+                  '--tw-prose-captions': theme('colors.neutral[500]'),
+                   blockquote: { color: theme('colors.neutral.400'), },
+                   'ul > li::marker': { color: theme('colors.neutral.600'), }, 'ol > li::marker': { color: theme('colors.neutral.600'), },
+                },
+              },
+              rockstar: { // Rockstar Theme Overrides
+                 css: {
+                   '--tw-prose-links': theme('colors.rockstar.cyan'), '--tw-prose-headings': theme('colors.neutral.50'),
+                   '--tw-prose-quote-borders': theme('colors.rockstar.500'), '--tw-prose-bullets': theme('colors.rockstar.400'),
+                   'h1, h2, h3': { 
+                      'background-image': `linear-gradient(to right, ${theme('colors.rockstar.400')}, ${theme('colors.rockstar.purple')})`,
+                      '-webkit-background-clip': 'text', 'background-clip': 'text', 'color': 'transparent',
+                   },
+                 }
+              }
+            }),
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.19.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-200 rockstar:bg-black rockstar:text-neutral-200">
+    <div class="fixed top-0 left-0 w-full h-full -z-10 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.05),rgba(255,255,255,0))] dark:bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.2),rgba(255,255,255,0))] rockstar:bg-transparent"></div>
+    <canvas id="rockstar-bg"></canvas>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+     <script>
+      // Rockstar theme background animation
+      const canvas = document.getElementById('rockstar-bg');
+      const ctx = canvas.getContext('2d');
+      let animationFrameId;
+
+      const setup = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+      };
+      
+      let particles = [];
+      const particleCount = 70;
+
+      class Particle {
+          constructor() {
+              this.x = Math.random() * canvas.width;
+              this.y = Math.random() * canvas.height;
+              this.vx = (Math.random() - 0.5) * 0.5;
+              this.vy = (Math.random() - 0.5) * 0.5;
+              this.radius = Math.random() * 1.5 + 0.5;
+              this.color = `rgba(236, 72, 153, ${Math.random() * 0.5 + 0.2})`; // rockstar-500
+          }
+          draw() {
+              ctx.beginPath();
+              ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+              ctx.fillStyle = this.color;
+              ctx.fill();
+          }
+          update() {
+              this.x += this.vx;
+              this.y += this.vy;
+              if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+              if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+          }
+      }
+      
+      const initParticles = () => {
+          particles = [];
+          for (let i = 0; i < particleCount; i++) {
+              particles.push(new Particle());
+          }
+      };
+
+      const animate = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          
+          for (let i = 0; i < particles.length; i++) {
+              particles[i].update();
+              particles[i].draw();
+              
+              for (let j = i + 1; j < particles.length; j++) {
+                  const dx = particles[i].x - particles[j].x;
+                  const dy = particles[i].y - particles[j].y;
+                  const distance = Math.sqrt(dx * dx + dy * dy);
+                  
+                  if (distance < 100) {
+                      ctx.beginPath();
+                      ctx.moveTo(particles[i].x, particles[i].y);
+                      ctx.lineTo(particles[j].x, particles[j].y);
+                      ctx.strokeStyle = `rgba(168, 85, 247, ${1 - distance / 100})`; // rockstar-purple
+                      ctx.lineWidth = 0.5;
+                      ctx.stroke();
+                  }
+              }
+          }
+          animationFrameId = requestAnimationFrame(animate);
+      };
+
+      const startAnimation = () => {
+        if (document.documentElement.classList.contains('rockstar')) {
+          setup();
+          initParticles();
+          if (animationFrameId) cancelAnimationFrame(animationFrameId);
+          animate();
+        }
+      };
+
+      const stopAnimation = () => {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      };
+      
+      const observer = new MutationObserver((mutationsList) => {
+          for (const mutation of mutationsList) {
+              if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                  if (document.documentElement.classList.contains('rockstar')) {
+                      startAnimation();
+                  } else {
+                      stopAnimation();
+                  }
+              }
+          }
+      });
+      
+      observer.observe(document.documentElement, { attributes: true });
+
+      // Initial check
+      if (document.documentElement.classList.contains('rockstar')) {
+        startAnimation();
+      }
+
+      window.addEventListener('resize', () => {
+        if (document.documentElement.classList.contains('rockstar')) {
+            startAnimation();
+        }
+      });
+    </script>
+  </body>
+</html>
