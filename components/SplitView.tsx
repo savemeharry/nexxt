@@ -251,7 +251,10 @@ const SplitView: React.FC<SplitViewProps> = ({
                          <ChatDisplay 
                             messages={messages} 
                             isLoading={isLoading} 
-                            onSelectProject={() => {}} 
+                            onSelectProject={() => {}}
+                            isWebSearchActive={false}
+                            searchQueries={[]}
+                            foundSources={[]}
                         />
                     </div>
                     <div className="p-4 border-t border-neutral-800/80 shrink-0">
@@ -261,6 +264,8 @@ const SplitView: React.FC<SplitViewProps> = ({
                             isLoading={isLoading}
                             onShowChat={() => {}}
                             hasMessages={true}
+                            webSearchEnabled={false}
+                            onToggleWebSearch={undefined}
                         />
                     </div>
                 </div>

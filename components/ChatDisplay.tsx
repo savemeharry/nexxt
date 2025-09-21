@@ -6,6 +6,7 @@ import { FormattedText } from './FormattedText';
 import { SolutionCardDisplay } from './SolutionCardDisplay';
 import { FileBadgeIcon } from './icons/FileBadgeIcon';
 import { SourcesList } from './SourceCard';
+import { LiveSearchIndicator } from './LiveSearchIndicator';
 import { TerminalIcon } from './icons/TerminalIcon';
 import { BriefcaseIcon } from './icons/BriefcaseIcon';
 
@@ -13,9 +14,19 @@ interface ChatDisplayProps {
     messages: ChatMessage[];
     isLoading: boolean;
     onSelectProject: (projectId: string) => void;
+    isWebSearchActive?: boolean;
+    searchQueries?: string[];
+    foundSources?: string[];
 }
 
-const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelectProject }) => {
+const ChatDisplay: React.FC<ChatDisplayProps> = ({ 
+    messages, 
+    isLoading, 
+    onSelectProject,
+    isWebSearchActive = false,
+    searchQueries = [],
+    foundSources = []
+}) => {
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -28,6 +39,15 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelect
 
     return (
         <div className="p-4 space-y-6 w-full max-w-4xl mx-auto">
+            {/* Live search indicator */}
+            {isLoading && isWebSearchActive && (
+                <LiveSearchIndicator 
+                    isSearching={true}
+                    searchQueries={searchQueries}
+                    foundSources={foundSources}
+                />
+            )}
+            
             {messages.map((msg, index) => {
                 if (msg.role === 'system') {
                      const text = msg.content.text;

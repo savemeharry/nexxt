@@ -12,11 +12,28 @@ interface ChatPanelProps {
   isLoading: boolean;
   onClose: () => void;
   onSelectProject: (projectId: string) => void;
-  onSendMessage: (message: string, attachedFileIds: string[], options: {}) => void;
+  onSendMessage: (message: string, attachedFileIds: string[], options: { webSearch?: boolean }) => void;
   aiFeedback: { stage: string; files: string[] } | null;
+  webSearchEnabled?: boolean;
+  onToggleWebSearch?: (enabled: boolean) => void;
+  isWebSearchActive?: boolean;
+  searchQueries?: string[];
+  foundSources?: string[];
 }
 
-const ChatPanel: React.FC<ChatPanelProps> = ({ messages, isLoading, onClose, onSelectProject, onSendMessage, aiFeedback }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({ 
+  messages, 
+  isLoading, 
+  onClose, 
+  onSelectProject, 
+  onSendMessage, 
+  aiFeedback,
+  webSearchEnabled = false,
+  onToggleWebSearch,
+  isWebSearchActive = false,
+  searchQueries = [],
+  foundSources = []
+}) => {
   return (
     <div
       className="fixed inset-0 z-40 bg-white/60 dark:bg-neutral-950/60 rockstar:bg-black/60 backdrop-blur-md flex flex-col animate-fade-scale-in"
@@ -37,7 +54,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ messages, isLoading, onClose, onS
       <div
         className="flex-grow w-full h-full overflow-y-auto pt-16 pb-4"
       >
-        <ChatDisplay messages={messages} isLoading={isLoading} onSelectProject={onSelectProject} />
+        <ChatDisplay 
+          messages={messages} 
+          isLoading={isLoading} 
+          onSelectProject={onSelectProject}
+          isWebSearchActive={isWebSearchActive}
+          searchQueries={searchQueries}
+          foundSources={foundSources}
+        />
       </div>
 
       <div className="w-full max-w-4xl mx-auto p-4 shrink-0">
@@ -51,6 +75,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ messages, isLoading, onClose, onS
               isLoading={isLoading}
               onShowChat={() => {}}
               hasMessages={messages.length > 0}
+              webSearchEnabled={webSearchEnabled}
+              onToggleWebSearch={onToggleWebSearch}
           />
       </div>
     </div>

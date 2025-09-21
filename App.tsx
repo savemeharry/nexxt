@@ -1071,7 +1071,19 @@ const App: React.FC = () => {
             
             {isLoading && <Loader message={loadingMessage} />}
             <HistoryPanel history={history} isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} onSelect={(result) => { setMarketAnalysis(result); setTopic(result.topic); setMode(result.mode); setStage('RESEARCH'); setIsHistoryOpen(false); }} onClear={() => updateHistory([])} currentResultId={marketAnalysis?.id} />
-            {isChatPanelVisible && <ChatPanel messages={chatMessages} isLoading={isChatLoading} onClose={() => setIsChatPanelVisible(false)} onSelectProject={handleSelectProjectFromChat} onSendMessage={handleSendChatMessage} aiFeedback={aiFeedback} />}
+            {isChatPanelVisible && <ChatPanel 
+                messages={chatMessages} 
+                isLoading={isChatLoading} 
+                onClose={() => setIsChatPanelVisible(false)} 
+                onSelectProject={handleSelectProjectFromChat} 
+                onSendMessage={handleSendChatMessage} 
+                aiFeedback={aiFeedback}
+                webSearchEnabled={webSearchEnabled}
+                onToggleWebSearch={setWebSearchEnabled}
+                isWebSearchActive={isChatLoading && webSearchEnabled}
+                searchQueries={[]}
+                foundSources={[]}
+            />}
             {splitViewAsset && <SplitView 
                 asset={splitViewAsset} 
                 messages={chatMessages} 
