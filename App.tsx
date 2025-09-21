@@ -1142,7 +1142,13 @@ const App: React.FC = () => {
                     )}
                     {activeView === 'RESEARCH' && stage === 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
                          <>
-                            {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay stage={aiFeedback.stage} files={aiFeedback.files} /> </div> )}
+                            {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay 
+                                stage={aiFeedback.stage} 
+                                files={aiFeedback.files}
+                                searchQueries={liveSearchQueries}
+                                foundSources={liveFoundSources}
+                                isWebSearch={webSearchEnabled}
+                            /> </div> )}
                             <ChatBar 
                                 onSendMessage={handleSendChatMessage} 
                                 isLoading={isChatLoading} 
@@ -1155,7 +1161,13 @@ const App: React.FC = () => {
                     )}
                     {activeView !== 'DASHBOARD' && activeView !== 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
                          <>
-                            {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay stage={aiFeedback.stage} files={aiFeedback.files} /> </div> )}
+                            {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay 
+                                stage={aiFeedback.stage} 
+                                files={aiFeedback.files}
+                                searchQueries={liveSearchQueries}
+                                foundSources={liveFoundSources}
+                                isWebSearch={webSearchEnabled}
+                            /> </div> )}
                             <ChatBar 
                                 onSendMessage={handleSendChatMessage} 
                                 isLoading={isChatLoading} 

@@ -258,7 +258,13 @@ const SplitView: React.FC<SplitViewProps> = ({
                         />
                     </div>
                     <div className="p-4 border-t border-neutral-800/80 shrink-0">
-                        {isLoading && !animatedLines && <div className="mb-2"><AIFeedbackDisplay stage="Thinking..." files={[]} /></div>}
+                        {isLoading && !animatedLines && <div className="mb-2"><AIFeedbackDisplay 
+                            stage="Thinking..." 
+                            files={[]}
+                            searchQueries={[]}
+                            foundSources={[]}
+                            isWebSearch={false}
+                        /></div>}
                         <ChatBar
                             onSendMessage={(msg) => onSendMessage(msg, [asset.id], { fileContentOverride: localAssetRef.current.content })}
                             isLoading={isLoading}
