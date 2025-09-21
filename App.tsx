@@ -11,6 +11,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import HistoryPanel from './components/HistoryPanel';
 import BusinessPlanDisplay from './components/BusinessPlanDisplay';
 import Header from './components/Header';
+import LoginOverlay from './components/LoginOverlay';
 import ChatPanel from './components/ChatPanel';
 import ChatBar from './components/ChatBar';
 import WorkView from './components/WorkView';
@@ -280,11 +281,14 @@ const App: React.FC = () => {
         try {
             const stored = localStorage.getItem(key);
             let parsed = stored ? JSON.parse(stored) : [];
+            // Remove deprecated demo template (EcoCycle) if present
+            parsed = Array.isArray(parsed) ? parsed.filter((p: CompanyCardData) => p.id !== 'demo-project-ecocycle') : [];
             
             if (!stored || parsed.length === 0) {
                  // If storage is empty, initialize with all demo projects
-                console.log("Initializing with demo projects.");
-                updateAndStore(key, demoProjects, setter);
+                console.log("Initializing with demo projects (filtered).");
+                const initial = demoProjects.filter(p => p.id !== 'demo-project-ecocycle');
+                updateAndStore(key, initial, setter);
             } else {
                 // If storage has data, check if the "nexxt" project is missing and add it
                 const nexxtProjectExists = parsed.some((p: CompanyCardData) => p.id === 'demo-project-nexxt');
@@ -295,14 +299,16 @@ const App: React.FC = () => {
                         parsed.push(nexxtProject);
                     }
                 }
-                setter(parsed);
+                // Ensure deprecated template is not present after augmentation
+                setter(parsed.filter((p: CompanyCardData) => p.id !== 'demo-project-ecocycle'));
             }
             
         } catch (e) {
             console.error(`Failed to parse from localStorage with key ${key}`, e);
             localStorage.removeItem(key);
             // Fallback to demo projects on error
-            updateAndStore(key, demoProjects, setter);
+            const initial = demoProjects.filter(p => p.id !== 'demo-project-ecocycle');
+            updateAndStore(key, initial, setter);
         }
     };
     
@@ -536,6 +542,7 @@ const App: React.FC = () => {
 
 
   const handleSearch = () => {
+    if (!googleUser) { alert('Войдите через Google, чтобы использовать ресерч.'); return; }
     performResearch(topic, mode, researchContextProject);
   };
   
@@ -557,6 +564,7 @@ const App: React.FC = () => {
       attachedFileIds: string[] = [],
       options: { isContinuation?: boolean; contextOverride?: any, fileContentOverride?: string } = {}
   ) => {
+      if (!googleUser) { alert('Войдите через Google, чтобы использовать чат.'); return; }
       if (!message.trim() && attachedFileIds.length === 0) return;
       
       let focusedFiles: AttachedFile[] = [];
@@ -1116,6 +1124,8 @@ const App: React.FC = () => {
                 <div className="fixed bottom-0 left-0 right-0 h-44 pointer-events-none bg-gradient-to-t from-white/70 to-transparent dark:from-black/70 rockstar:from-black/80 z-10" />
             )}
         </div>
+        {/* Показывать логин только после входа с лендинга */}
+        {!isLandingPageVisible && !googleUser && <LoginOverlay onGoogleSignIn={() => googleDriveService.signIn()} />}
     </>
   );
 };
