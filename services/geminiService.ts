@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { extractTextForAttachedFile } from '../utils/extractText';
 import { ResearchMode } from '../types';
 import type { MarketAnalysisResult, GroundingSource, BusinessPlan, Stat, ComparisonTable, ChartData, ChatMessage, SolutionCard, CompanyCardData, Asset, AttachedFile, FileOperation, CreateGoalOperation, CreateTaskOperation, Task, Goal, EditTaskOperation, AddSubtaskOperation, SetTaskStatusOperation, TeamMemberSuggestion } from '../types';
 
@@ -197,20 +198,40 @@ const parseRetryMs = (error: any): number | null => {
 
 type GenerateParams = { modelCandidates: string[]; contents: any; config?: any };
 
+// Simple client-side rate limiter to mitigate 429s when users trigger many actions
+let lastRequestTime = 0;
+const MIN_INTERVAL_MS = 1500; // enforce at least 1.5s between calls in this tab
+
+const withRateLimit = async <T>(fn: () => Promise<T>): Promise<T> => {
+    const now = Date.now();
+    const waitMs = Math.max(0, lastRequestTime + MIN_INTERVAL_MS - now);
+    if (waitMs > 0) {
+        await sleep(waitMs);
+    }
+    try {
+        const result = await fn();
+        return result;
+    } finally {
+        lastRequestTime = Date.now();
+    }
+};
+
 const generateWithBackoff = async ({ modelCandidates, contents, config }: GenerateParams) => {
     let lastError: any = null;
     for (const model of modelCandidates) {
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < 4; attempt++) {
             try {
-                const response = await ai.models.generateContent({ model, contents, config });
+                const response = await withRateLimit(() => ai.models.generateContent({ model, contents, config }));
                 return response;
             } catch (err: any) {
                 lastError = err;
                 const code = err?.error?.code || err?.status;
                 const status = err?.error?.status;
                 if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
-                    const retryMs = parseRetryMs(err) ?? 45000;
-                    await sleep(retryMs);
+                    const base = parseRetryMs(err) ?? 15000;
+                    const jitter = Math.floor(Math.random() * 5000);
+                    const backoff = Math.min(base * Math.pow(2, attempt) + jitter, 60000);
+                    await sleep(backoff);
                     continue;
                 }
                 break;
@@ -311,11 +332,13 @@ const generateFollowUpPrompt = (question: string, context: string, chatHistory: 
                     currentTotalLength += fileContent.length;
                 }
                 
+                const extractedSection = (file as any).extractedText ? `\n[EXTRACTED_TEXT]\n${(file as any).extractedText}\n[/EXTRACTED_TEXT]` : '';
+
                 if (truncated) {
                     return `
 **Attached File Content ("${file.name}")**:
 ---
-${fileContent}
+${fileContent}${extractedSection}
 
 ...[CONTENT TRUNCATED TO FIT CONTEXT WINDOW]...
 ---`;
@@ -323,7 +346,7 @@ ${fileContent}
                      return `
 **Attached File Content ("${file.name}")**:
 ---
-${fileContent}
+${fileContent}${extractedSection}
 ---`;
                 }
             }).join('\n\n');
@@ -665,7 +688,27 @@ export const fetchFollowUp = async (
     chatHistory: ChatMessage[]
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
     try {
-        const prompt = generateFollowUpPrompt(question, context, chatHistory);
+        // Augment context with extracted text from attachments (PDF/images/text)
+        const preparedContext = await (async () => {
+            try {
+                const parsed = JSON.parse(context);
+                if (parsed.focusedFiles && Array.isArray(parsed.focusedFiles)) {
+                    const augmented = await Promise.all(parsed.focusedFiles.map(async (f: any) => {
+                        try {
+                            const extractedText = await extractTextForAttachedFile(f);
+                            return extractedText ? { ...f, extractedText } : f;
+                        } catch {
+                            return f;
+                        }
+                    }));
+                    parsed.focusedFiles = augmented;
+                    return JSON.stringify(parsed);
+                }
+            } catch {}
+            return context;
+        })();
+
+        const prompt = generateFollowUpPrompt(question, preparedContext, chatHistory);
         const response = await generateWithBackoff({
             modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
             contents: prompt,
@@ -738,6 +781,10 @@ export const fetchFollowUp = async (
         return { text: text.trim(), cards, fileOperations, projectClarification, teamMemberSuggestions };
     } catch (error) {
         console.error("Error fetching follow-up from Gemini API:", error, await (error as any).response?.json());
+        const code = (error as any)?.error?.code || (error as any)?.status;
+        if (code === 429) {
+            throw new Error("Слишком много запросов к модели (429). Подождите 10–60 секунд и попробуйте снова.");
+        }
         throw new Error("Failed to generate follow-up response.");
     }
 };
