@@ -12,9 +12,8 @@ export const LiveSearchIndicator: React.FC<LiveSearchIndicatorProps> = ({
     searchQueries = [], 
     foundSources = [] 
 }) => {
-    if (!isSearching && searchQueries.length === 0 && foundSources.length === 0) {
-        return null;
-    }
+    // Always show when web search is active, even without queries/sources
+    // Only hide if nothing is happening at all
 
     return (
         <div className="
@@ -36,7 +35,7 @@ export const LiveSearchIndicator: React.FC<LiveSearchIndicatorProps> = ({
                     <SearchIcon />
                 </div>
                 <span className="text-sm font-medium text-brand-700 dark:text-brand-300 rockstar:text-rockstar-purple">
-                    {isSearching ? 'Поиск в интернете...' : `Найдено источников: ${foundSources.length}`}
+                    {isSearching ? 'Поиск в интернете...' : foundSources.length > 0 ? `Найдено источников: ${foundSources.length}` : 'Веб-поиск включен'}
                 </span>
             </div>
 

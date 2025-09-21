@@ -1080,7 +1080,7 @@ const App: React.FC = () => {
                 aiFeedback={aiFeedback}
                 webSearchEnabled={webSearchEnabled}
                 onToggleWebSearch={setWebSearchEnabled}
-                isWebSearchActive={isChatLoading && webSearchEnabled}
+                isWebSearchActive={webSearchEnabled}
                 searchQueries={[]}
                 foundSources={[]}
             />}

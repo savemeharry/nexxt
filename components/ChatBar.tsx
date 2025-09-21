@@ -112,7 +112,18 @@ const ChatBar: React.FC<ChatBarProps> = ({
   };
 
   return (
-    <div className={`bg-white dark:bg-neutral-900/50 rockstar:bg-black/50 backdrop-blur-md border border-neutral-200/80 dark:border-neutral-800 rockstar:border-rockstar-500/50 rounded-xl p-2 shadow-lg shadow-neutral-300/30 dark:shadow-black/30 rockstar:shadow-[0_0_20px_rgba(236,72,153,0.2)] w-full transition-all duration-300 ${isDragOver ? 'border-brand-500 dark:border-brand-500 ring-2 ring-brand-500/50' : ''}`}>
+    <div className={`
+      bg-white dark:bg-neutral-900/50 rockstar:bg-black/50 backdrop-blur-md 
+      border border-neutral-200/80 dark:border-neutral-800 rockstar:border-rockstar-500/50 
+      rounded-xl p-2 shadow-lg shadow-neutral-300/30 dark:shadow-black/30 
+      rockstar:shadow-[0_0_20px_rgba(236,72,153,0.2)] w-full transition-all duration-300 
+      ${isDragOver ? 'border-brand-500 dark:border-brand-500 ring-2 ring-brand-500/50' : ''}
+      ${isLoading && webSearchEnabled ? 'shimmer-container' : ''}
+    `}
+    style={isLoading && webSearchEnabled ? {
+      position: 'relative',
+      overflow: 'hidden'
+    } : {}}>
       <form 
         onSubmit={handleSubmit} 
         className="flex items-center gap-2"
@@ -166,11 +177,6 @@ const ChatBar: React.FC<ChatBarProps> = ({
                 }
                 className="flex-grow h-full bg-transparent focus:outline-none min-w-[150px]"
                 disabled={isLoading}
-                style={isLoading && webSearchEnabled ? { 
-                    background: 'linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 2s infinite'
-                } : {}}
             />
         </div>
 
@@ -199,6 +205,13 @@ const ChatBar: React.FC<ChatBarProps> = ({
             <ArrowUpIcon />
         </button>
       </form>
+      
+      {/* Shimmer overlay */}
+      {isLoading && webSearchEnabled && (
+        <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
+          <div className="shimmer-overlay"></div>
+        </div>
+      )}
     </div>
   );
 };
