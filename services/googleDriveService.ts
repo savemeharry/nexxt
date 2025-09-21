@@ -117,6 +117,49 @@ export const signOut = () => {
     }
 };
 
+// ------- Simple Drive rate-limit + retry helpers -------
+const driveSleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+let lastDriveCallTs = 0;
+const MIN_DRIVE_INTERVAL_MS = 800; // throttle sequential Drive calls
+
+const withDriveRateLimit = async <T>(fn: () => Promise<T>): Promise<T> => {
+    const now = Date.now();
+    const waitMs = Math.max(0, lastDriveCallTs + MIN_DRIVE_INTERVAL_MS - now);
+    if (waitMs > 0) await driveSleep(waitMs);
+    try {
+        return await fn();
+    } finally {
+        lastDriveCallTs = Date.now();
+    }
+};
+
+const fetchWithRetry = async (input: RequestInfo, init: RequestInit, maxRetries: number = 5): Promise<Response> => {
+    let attempt = 0;
+    let lastError: any = null;
+    while (attempt <= maxRetries) {
+        try {
+            // rate-limit each attempt
+            const res = await withDriveRateLimit(() => fetch(input, init));
+            if (res.status !== 429 && res.status !== 403) {
+                return res;
+            }
+            // 429/403 userRateLimitExceeded/backoff
+            const retryAfter = Number(res.headers.get('Retry-After'));
+            const base = !isNaN(retryAfter) ? Math.max(1, retryAfter) * 1000 : Math.min(2000 * Math.pow(2, attempt), 15000);
+            const jitter = Math.floor(Math.random() * 500);
+            await driveSleep(base + jitter);
+        } catch (e) {
+            lastError = e;
+            const base = Math.min(2000 * Math.pow(2, attempt), 15000);
+            const jitter = Math.floor(Math.random() * 500);
+            await driveSleep(base + jitter);
+        }
+        attempt++;
+    }
+    if (lastError) throw lastError;
+    throw new Error('Google Drive request failed after retries');
+};
+
 const findOrCreateFolder = async (folderName: string, parentId: string = 'root'): Promise<string> => {
     const query = `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and '${parentId}' in parents and trashed=false`;
     const response = await gapi.client.drive.files.list({ q: query, fields: 'files(id)' });
@@ -263,20 +306,21 @@ export const listTextFiles = async (pageSize: number = 50) => {
         " or mimeType contains 'image/'",
         ")"
     ].join(' ');
-    const res = await gapi.client.drive.files.list({ q: query, pageSize, fields: 'files(id,name,mimeType,size)', spaces: 'drive' });
-    return res.result.files || [];
+    // Wrap gapi call with rate-limit
+    const res: any = await withDriveRateLimit(() => gapi.client.drive.files.list({ q: query, pageSize, fields: 'files(id,name,mimeType,size)', spaces: 'drive' }));
+    return (res.result.files || []).map((f: any) => ({ id: f.id, name: f.name, mimeType: f.mimeType, size: Number(f.size || 0) }));
 };
 
 export const downloadFile = async (fileId: string): Promise<{ name: string; mimeType: string; content: string; size: number } > => {
     if (!gapi.client.getToken()) throw new Error("Please sign in to Google first.");
-    const metaRes = await gapi.client.drive.files.get({ fileId, fields: 'id,name,mimeType,size' });
+    const metaRes: any = await withDriveRateLimit(() => gapi.client.drive.files.get({ fileId, fields: 'id,name,mimeType,size' }));
     const { name, mimeType, size } = metaRes.result as { name: string; mimeType: string; size: number };
     const token = gapi.client.getToken().access_token;
     let finalMime = mimeType;
     let base64 = '';
     // Google Docs export handling
     if (mimeType === 'application/vnd.google-apps.document') {
-        const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers: { Authorization: `Bearer ${token}` } });
+        const exportRes = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers: { Authorization: `Bearer ${token}` } });
         if (!exportRes.ok) throw new Error(`Failed to export Google Doc: ${await exportRes.text()}`);
         const text = await exportRes.text();
         base64 = btoa(unescape(encodeURIComponent(text)));
@@ -284,7 +328,7 @@ export const downloadFile = async (fileId: string): Promise<{ name: string; mime
         return { name: name.endsWith('.txt') ? name : `${name}.txt`, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: text.length };
     }
     if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-        const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv`, { headers: { Authorization: `Bearer ${token}` } });
+        const exportRes = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv`, { headers: { Authorization: `Bearer ${token}` } });
         if (!exportRes.ok) throw new Error(`Failed to export Google Sheet: ${await exportRes.text()}`);
         const text = await exportRes.text();
         base64 = btoa(unescape(encodeURIComponent(text)));
@@ -292,7 +336,7 @@ export const downloadFile = async (fileId: string): Promise<{ name: string; mime
         return { name: name.endsWith('.csv') ? name : `${name}.csv`, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: text.length };
     }
     if (mimeType === 'application/vnd.google-apps.presentation') {
-        const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers: { Authorization: `Bearer ${token}` } });
+        const exportRes = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers: { Authorization: `Bearer ${token}` } });
         if (!exportRes.ok) throw new Error(`Failed to export Google Slides: ${await exportRes.text()}`);
         const text = await exportRes.text();
         base64 = btoa(unescape(encodeURIComponent(text)));
@@ -300,7 +344,7 @@ export const downloadFile = async (fileId: string): Promise<{ name: string; mime
         return { name: name.endsWith('.txt') ? name : `${name}.txt`, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: text.length };
     }
     // Other files (binary/text)
-    const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+    const contentRes = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
     if (!contentRes.ok) throw new Error(`Failed to download file: ${await contentRes.text()}`);
     const buf = await contentRes.arrayBuffer();
     const bytes = new Uint8Array(buf);
