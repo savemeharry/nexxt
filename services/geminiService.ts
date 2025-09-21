@@ -180,6 +180,46 @@ const b64_to_utf8 = (str: string): string => {
     }
 };
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const parseRetryMs = (error: any): number | null => {
+    try {
+        const details = error?.error?.details || error?.details || [];
+        const retryInfo = details.find((d: any) => d['@type']?.includes('RetryInfo'));
+        const delay = retryInfo?.retryDelay;
+        if (typeof delay === 'string' && delay.endsWith('s')) {
+            const seconds = parseFloat(delay.replace('s',''));
+            return isNaN(seconds) ? null : Math.max(1, Math.floor(seconds * 1000));
+        }
+    } catch {}
+    return null;
+};
+
+type GenerateParams = { modelCandidates: string[]; contents: any; config?: any };
+
+const generateWithBackoff = async ({ modelCandidates, contents, config }: GenerateParams) => {
+    let lastError: any = null;
+    for (const model of modelCandidates) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const response = await ai.models.generateContent({ model, contents, config });
+                return response;
+            } catch (err: any) {
+                lastError = err;
+                const code = err?.error?.code || err?.status;
+                const status = err?.error?.status;
+                if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
+                    const retryMs = parseRetryMs(err) ?? 45000;
+                    await sleep(retryMs);
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+    throw lastError;
+};
+
 const generateFollowUpPrompt = (question: string, context: string, chatHistory: ChatMessage[]): string => {
     const historyString = chatHistory
         .map(m => `${m.role}: ${m.content.text}`)
@@ -247,7 +287,7 @@ const generateFollowUpPrompt = (question: string, context: string, chatHistory: 
 
         if (parsedContext.focusedFiles && parsedContext.focusedFiles.length > 0) {
             const files = parsedContext.focusedFiles as AttachedFile[];
-            const MAX_TOTAL_CONTENT_LENGTH = 80000;
+            const MAX_TOTAL_CONTENT_LENGTH = 50000;
             let currentTotalLength = 0;
 
             const fileContents = files.map(file => {
@@ -575,8 +615,8 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
         ? generateAnalyzeNichePrompt(topic, context)
         : generateExploreIdeasPrompt(topic);
     
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+    const response = await generateWithBackoff({
+        modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
         contents: prompt,
         config: {
             ...(mode === ResearchMode.Analyze && { tools: [{googleSearch: {}}] }),
@@ -607,8 +647,8 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
 export const fetchBusinessPlan = async (marketContext: string, businessIdea: string): Promise<BusinessPlan> => {
   try {
     const prompt = generateBusinessPlanPrompt(marketContext, businessIdea);
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+    const response = await generateWithBackoff({
+        modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
         contents: prompt,
     });
     return parseBusinessPlan(response.text);
@@ -626,8 +666,8 @@ export const fetchFollowUp = async (
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
     try {
         const prompt = generateFollowUpPrompt(question, context, chatHistory);
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+        const response = await generateWithBackoff({
+            modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
             contents: prompt,
             config: {
                 tools: [{googleSearch: {}}]
