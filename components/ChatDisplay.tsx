@@ -81,6 +81,23 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelect
                                 <FormattedText text={msg.content.text} />
                             </div>
                         )}
+                        {/* Фоллбек: если у модели есть ссылки в тексте, но нет cards — вытащим и покажем карточками */}
+                        {msg.role === 'model' && !msg.content.cards && msg.content.text && (() => {
+                            const urlRegex = /(https?:\/\/[^\s)]+)|((?:www\.)[^\s)]+\.[^\s)]+)/gi;
+                            const urls = Array.from(new Set((msg.content.text.match(urlRegex) || []).map(u => (u.startsWith('http') ? u : `https://${u}`))));
+                            if (urls.length === 0) return null;
+                            const cards = urls.slice(0, 8).map(link => ({ title: new URL(link).hostname.replace(/^www\./,''), description: '', link }));
+                            return (
+                                <div className="w-full max-w-full">
+                                    <h4 className="text-sm font-semibold text-neutral-300 my-2">Рекомендуемые ссылки:</h4>
+                                    <div className="flex flex-wrap gap-4">
+                                        {cards.map((card, i) => (
+                                            <SolutionCardDisplay key={i} card={card as any} compact />
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                         {msg.role === 'model' && msg.content.projectClarification && (
                             <div className="w-full max-w-xl mt-2 space-y-2">
                                 {msg.content.projectClarification.map(project => (
@@ -123,7 +140,7 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelect
                                 <h4 className="text-sm font-semibold text-neutral-300 my-2">Рекомендуемые ссылки:</h4>
                                 <div className="flex flex-wrap gap-4">
                                     {msg.content.cards.map((card, cardIndex) => (
-                                        <SolutionCardDisplay key={cardIndex} card={card} />
+                                        <SolutionCardDisplay key={cardIndex} card={card} compact />
                                     ))}
                                 </div>
                             </div>

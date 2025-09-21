@@ -347,6 +347,15 @@ const generateFollowUpPrompt = (question: string, context: string, chatHistory: 
 - \`content\` is an array of strings, where each string is a new line of plain text or markdown.
 - For \`REPLACE\`, the \`content\` array replaces the single line specified by \`lineNumber\`.
 - For \`DELETE\`, \`count\` is optional and defaults to 1.
+\n
+**LINKS AS SOLUTION CARDS (MANDATORY IN SPLIT VIEW)**:
+When you cite sources or provide external links, you MUST also provide them as Solution Cards. Keep each card compact: a short, human-readable title (<= 60 chars) and a one-line summary (<= 80 chars). Add them using the [SOLUTION_CARDS_START] ... [SOLUTION_CARDS_END] block, in valid JSON, e.g.:
+\n
+[SOLUTION_CARDS_START]
+[
+  { "title": "National Bank of Kazakhstan", "description": "Official exchange rates.", "link": "https://www.nationalbank.kz/" }
+]
+[SOLUTION_CARDS_END]
 `;
         }
 
