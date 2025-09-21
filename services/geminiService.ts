@@ -285,202 +285,6 @@ const generateWithBackoff = async ({ modelCandidates, contents, config }: Genera
     throw lastError;
 };
 
-// Streaming version for real-time grounding sources
-const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: GenerateParams, onSearchUpdate?: (queries: string[], sources: string[]) => void) => {
-    let lastError: any = null;
-    for (const model of modelCandidates) {
-        for (let attempt = 0; attempt < 4; attempt++) {
-            try {
-                if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
-                
-                // Use the correct streaming API method
-                const stream = await withRateLimit(() => withTimeout(
-                    ai.models.generateContentStream({ model, contents, config }), 
-                    REQUEST_TIMEOUT_MS, 
-                    activeAbortController?.signal
-                ));
-                
-                let fullText = '';
-                let groundingSources: string[] = [];
-                
-                for await (const chunk of stream) {
-                    if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
-                    
-                    // Accumulate text
-                    if (chunk.text) {
-                        fullText += chunk.text;
-                    }
-                    
-                    // Extract grounding sources in real-time
-                    if (chunk.groundingMetadata?.groundingChunks) {
-                        const newSources = chunk.groundingMetadata.groundingChunks
-                            .map((groudingChunk: any) => {
-                                const uri = groudingChunk.web?.uri;
-                                if (uri) {
-                                    try {
-                                        return new URL(uri).hostname.replace(/^www\./, '');
-                                    } catch (e) {
-                                        console.warn('Invalid URI:', uri);
-                                        return null;
-                                    }
-                                }
-                                return null;
-                            })
-                            .filter(Boolean);
-                        
-                        if (newSources.length > 0) {
-                            groundingSources = [...new Set([...groundingSources, ...newSources])];
-                            
-                            // Call callback with real-time updates
-                            if (onSearchUpdate) {
-                                onSearchUpdate([], groundingSources);
-                            }
-                        }
-                    }
-                }
-                
-                // Return final response with accumulated data
-                return {
-                    text: fullText,
-                    groundingMetadata: { groundingChunks: groundingSources.map(source => ({ web: { uri: `https://${source}` } })) }
-                };
-                
-            } catch (err: any) {
-                lastError = err;
-                const code = err?.error?.code || err?.status;
-                const status = err?.error?.status;
-                const message = err?.message || '';
-                
-                if (err && (err.message === 'ABORTED' || err.message === 'TIMEOUT')) {
-                    throw err;
-                }
-                
-                // If streaming fails due to API issues, fallback to regular generateContent
-                if (message.includes('not async iterable') || message.includes('stream')) {
-                    console.warn('Streaming failed, falling back to regular generateContent');
-                    try {
-                        const fallbackResponse = await withRateLimit(() => withTimeout(ai.models.generateContent({ model, contents, config }), REQUEST_TIMEOUT_MS, activeAbortController?.signal));
-                        
-                        // Extract grounding sources from fallback response
-                        const sources = fallbackResponse.groundingMetadata?.groundingChunks
-                            ?.map((chunk: any) => chunk.web?.uri ? new URL(chunk.web.uri).hostname.replace(/^www\./, '') : '')
-                            ?.filter(Boolean) || [];
-                        
-                        // Call callback with final sources
-                        if (onSearchUpdate && sources.length > 0) {
-                            onSearchUpdate([], sources);
-                        }
-                        
-                        return fallbackResponse;
-                    } catch (fallbackErr) {
-                        // If fallback also fails, continue with retry logic
-                        lastError = fallbackErr;
-                    }
-                }
-                
-                if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
-                    const base = parseRetryMs(err) ?? 15000;
-                    const jitter = Math.floor(Math.random() * 5000);
-                    const backoff = Math.min(base * Math.pow(2, attempt) + jitter, 60000);
-                    cooldownUntilMs = Date.now() + backoff;
-                    await sleepWithAbort(backoff, activeAbortController?.signal);
-                    continue;
-                }
-                break;
-            }
-        }
-    }
-    throw lastError;
-};
-
-// Smart fake streaming: get real sources first, then stream them realistically
-const generateWithSmartStreaming = async ({ modelCandidates, contents, config }: GenerateParams, onSearchUpdate: (queries: string[], sources: string[]) => void) => {
-    console.log('🚀 Starting smart streaming for:', contents);
-    
-    // Step 1: Quick preliminary request to get real sources
-    const quickPrompt = `Based on this query, what web sources would be most relevant to search? Just give me a brief answer: ${contents}`;
-    
-    let realSources: string[] = [];
-    
-    try {
-        console.log('📡 Making preliminary request for sources...');
-        // Get real sources from Gemini
-        const sourceResponse = await generateWithBackoff({
-            modelCandidates,
-            contents: quickPrompt,
-            config
-        });
-        
-        console.log('📊 Source response received:', {
-            hasGrounding: !!sourceResponse.groundingMetadata,
-            chunksCount: sourceResponse.groundingMetadata?.groundingChunks?.length || 0
-        });
-        
-        // Extract sources from grounding metadata
-        if (sourceResponse.groundingMetadata?.groundingChunks) {
-            realSources = sourceResponse.groundingMetadata.groundingChunks
-                .map((chunk: any) => {
-                    const uri = chunk.web?.uri;
-                    if (uri) {
-                        try {
-                            return new URL(uri).hostname.replace(/^www\./, '');
-                        } catch (e) {
-                            return null;
-                        }
-                    }
-                    return null;
-                })
-                .filter(Boolean);
-        }
-        
-        console.log('🔍 Extracted real sources:', realSources);
-    } catch (error) {
-        console.warn('⚠️ Could not get preliminary sources, using fallback:', error);
-        // Fallback to common sources based on query content
-        const query = contents.toLowerCase();
-        if (query.includes('код') || query.includes('программ')) {
-            realSources = ['stackoverflow.com', 'github.com', 'developer.mozilla.org'];
-        } else if (query.includes('новост') || query.includes('событи')) {
-            realSources = ['news.google.com', 'reuters.com', 'bbc.com'];
-        } else {
-            realSources = ['wikipedia.org', 'google.com', 'medium.com'];
-        }
-        console.log('📋 Using fallback sources:', realSources);
-    }
-    
-    // Step 2: Start realistic fake streaming with real sources
-    const streamSources = async () => {
-        console.log('🎬 Starting to stream sources:', realSources);
-        const delays = [800, 1200, 1800, 2400, 3200]; // Realistic delays
-        let streamedSources: string[] = [];
-        
-        for (let i = 0; i < Math.min(realSources.length, 5); i++) {
-            console.log(`⏳ Waiting ${delays[i] || 1000}ms before showing source ${i + 1}`);
-            await new Promise(resolve => setTimeout(resolve, delays[i] || 1000));
-            
-            if (activeAbortController?.signal.aborted) {
-                console.log('🛑 Streaming aborted');
-                break;
-            }
-            
-            streamedSources.push(realSources[i]);
-            console.log('📤 Streaming source:', realSources[i], 'Total streamed:', streamedSources);
-            onSearchUpdate([], [...streamedSources]);
-        }
-        console.log('✅ Finished streaming all sources');
-    };
-    
-    // Step 3: Start streaming sources and main request in parallel
-    console.log('🔄 Starting parallel execution: streaming + main request');
-    const [_, mainResponse] = await Promise.all([
-        streamSources(),
-        generateWithBackoff({ modelCandidates, contents, config })
-    ]);
-    
-    console.log('🎯 Smart streaming completed, returning response');
-    return mainResponse;
-};
-
 const generateFollowUpPrompt = (question: string, context: string, chatHistory: ChatMessage[]): string => {
     const historyString = chatHistory
         .map(m => `${m.role}: ${m.content.text}`)
@@ -955,8 +759,7 @@ export const fetchBusinessPlan = async (marketContext: string, businessIdea: str
 export const fetchFollowUp = async (
     question: string, 
     context: string, 
-    chatHistory: ChatMessage[],
-    onSearchUpdate?: (queries: string[], sources: string[]) => void
+    chatHistory: ChatMessage[]
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
     try {
         newRun();
@@ -981,19 +784,11 @@ export const fetchFollowUp = async (
         })();
 
         const prompt = generateFollowUpPrompt(question, preparedContext, chatHistory);
-        
-        // Smart fake streaming: first get sources, then stream them realistically
-        const response = onSearchUpdate ? 
-            await generateWithSmartStreaming({
-                modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
-                contents: prompt,
-                config: { tools: [{ googleSearch: {} }] }
-            }, onSearchUpdate) :
-            await generateWithBackoff({
-                modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
-                contents: prompt,
-                config: { tools: [{ googleSearch: {} }] }
-            });
+        const response = await generateWithBackoff({
+            modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
+            contents: prompt,
+            config: { tools: [{ googleSearch: {} }] }
+        });
         
         let text = response.text ?? '';
 
