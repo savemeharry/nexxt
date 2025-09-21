@@ -622,7 +622,7 @@ const App: React.FC = () => {
       const feedbackFiles = focusedFiles.map(f => f.name);
       setAiFeedback({ stage: 'Preparing files...', files: feedbackFiles });
 
-      // Process files for AI context (extract text from DOCX)
+      // Process files for AI context (extract text from DOCX/PDF/Images via OCR)
         const filesForContext = await Promise.all(
             focusedFiles.map(async (file) => {
                 const isDocx = file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx');
@@ -641,6 +641,47 @@ const App: React.FC = () => {
                     } catch (e) {
                         console.error("Failed to extract text from docx for AI context:", e);
                         const errorContent = 'Error: Could not read content from this DOCX file.';
+                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(errorContent)}`, mimeType: 'text/plain' };
+                    }
+                }
+                const isPdf = file.mimeType === 'application/pdf' || file.name.endsWith('.pdf');
+                if (isPdf && file.content && (window as any).pdfjsLib) {
+                    try {
+                        const dataUrlToArrayBuffer = (dataUrl: string) => {
+                            const base64 = dataUrl.split(',')[1] || '';
+                            const binaryStr = atob(base64);
+                            const len = binaryStr.length; const bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
+                            return bytes.buffer;
+                        };
+                        const pdfjsLib = (window as any).pdfjsLib;
+                        const pdfData = dataUrlToArrayBuffer(file.content);
+                        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                        let textContent = '';
+                        for (let p = 1; p <= pdf.numPages; p++) {
+                            const page = await pdf.getPage(p);
+                            const txt = await page.getTextContent();
+                            textContent += txt.items.map((it: any) => it.str).join(' ') + '\n\n';
+                        }
+                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(textContent)}`, mimeType: 'text/plain' };
+                    } catch (e) {
+                        console.error('Failed to extract text from PDF for AI context:', e);
+                        const errorContent = 'Error: Could not read content from this PDF file.';
+                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(errorContent)}`, mimeType: 'text/plain' };
+                    }
+                }
+                // OCR for common image types
+                const isImage = (file.mimeType?.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name)) && !!(window as any).Tesseract;
+                if (isImage && file.content) {
+                    try {
+                        const Tesseract = (window as any).Tesseract;
+                        const { data } = await Tesseract.recognize(file.content, 'eng+rus', { logger: () => {} });
+                        const text = (data?.text || '').trim();
+                        const ocrText = text || '[No textual content detected in the image]';
+                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(ocrText)}`, mimeType: 'text/plain' };
+                    } catch (e) {
+                        console.error('Failed to OCR image for AI context:', e);
+                        const errorContent = 'Error: Could not extract text from this image.';
                         return { ...file, content: `data:text/plain;base64,${utf8_to_b64(errorContent)}`, mimeType: 'text/plain' };
                     }
                 }
