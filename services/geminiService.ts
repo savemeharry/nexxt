@@ -376,13 +376,11 @@ const generateFollowUpPrompt = (question: string, context: string, chatHistory: 
                     currentTotalLength += fileContent.length;
                 }
                 
-                const extractedSection = (file as any).extractedText ? `\n[EXTRACTED_TEXT]\n${(file as any).extractedText}\n[/EXTRACTED_TEXT]` : '';
-
                 if (truncated) {
                     return `
 **Attached File Content ("${file.name}")**:
 ---
-${fileContent}${extractedSection}
+${fileContent}
 
 ...[CONTENT TRUNCATED TO FIT CONTEXT WINDOW]...
 ---`;
@@ -390,7 +388,7 @@ ${fileContent}${extractedSection}
                      return `
 **Attached File Content ("${file.name}")**:
 ---
-${fileContent}${extractedSection}
+${fileContent}
 ---`;
                 }
             }).join('\n\n');

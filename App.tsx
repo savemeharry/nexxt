@@ -622,85 +622,28 @@ const App: React.FC = () => {
       const feedbackFiles = focusedFiles.map(f => f.name);
       setAiFeedback({ stage: 'Preparing files...', files: feedbackFiles });
 
-      // Process files for AI context (extract text from DOCX/PDF/Images via OCR)
-        const filesForContext = await Promise.all(
-            focusedFiles.map(async (file) => {
-                // Lazy re-download from Google Drive if content is missing
-                if ((!file.content || !file.content.includes(',')) && file.source?.provider === 'gdrive' && file.source.fileId) {
-                    try {
-                        const dl = await googleDriveService.downloadFile(file.source.fileId);
-                        file = { ...file, content: dl.content, mimeType: dl.mimeType, size: dl.size };
-                    } catch (e) {
-                        console.error('Failed to lazy download file from Google Drive', e);
-                    }
-                }
-                const isDocx = file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx');
-                if (isDocx && file.content && typeof mammoth !== 'undefined') {
-                    try {
-                        const blob = dataUrlToBlob(file.content);
-                        if (!blob) throw new Error("Could not convert data URL to Blob.");
-                        const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result as ArrayBuffer);
-                            reader.onerror = reject;
-                            reader.readAsArrayBuffer(blob);
-                        });
-                        const { value: textContent } = await mammoth.extractRawText({ arrayBuffer });
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(textContent)}`, mimeType: 'text/plain' };
-                    } catch (e) {
-                        console.error("Failed to extract text from docx for AI context:", e);
-                        const errorContent = 'Error: Could not read content from this DOCX file.';
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(errorContent)}`, mimeType: 'text/plain' };
-                    }
-                }
-                const isPdf = file.mimeType === 'application/pdf' || file.name.endsWith('.pdf');
-                if (isPdf && file.content && (window as any).pdfjsLib) {
-                    try {
-                        const dataUrlToArrayBuffer = (dataUrl: string) => {
-                            const base64 = dataUrl.split(',')[1] || '';
-                            const binaryStr = atob(base64);
-                            const len = binaryStr.length; const bytes = new Uint8Array(len);
-                            for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
-                            return bytes.buffer;
-                        };
-                        const pdfjsLib = (window as any).pdfjsLib;
-                        const pdfData = dataUrlToArrayBuffer(file.content);
-                        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-                        let textContent = '';
-                        const MAX_PAGES = 30; // guard to avoid huge prompts
-                        const pagesToRead = Math.min(pdf.numPages, MAX_PAGES);
-                        for (let p = 1; p <= pagesToRead; p++) {
-                            const page = await pdf.getPage(p);
-                            const txt = await page.getTextContent();
-                            textContent += txt.items.map((it: any) => it.str).join(' ') + '\n\n';
-                        }
-                        const MAX_CHARS = 40000;
-                        const clipped = textContent.length > MAX_CHARS ? (textContent.slice(0, MAX_CHARS) + `\n\n...[TRUNCATED ${textContent.length - MAX_CHARS} CHARS]...`) : textContent;
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(clipped)}`, mimeType: 'text/plain' };
-                    } catch (e) {
-                        console.error('Failed to extract text from PDF for AI context:', e);
-                        const errorContent = 'Error: Could not read content from this PDF file.';
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(errorContent)}`, mimeType: 'text/plain' };
-                    }
-                }
-                // OCR for common image types
-                const isImage = (file.mimeType?.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name)) && !!(window as any).Tesseract;
-                if (isImage && file.content) {
-                    try {
-                        const Tesseract = (window as any).Tesseract;
-                        const { data } = await Tesseract.recognize(file.content, 'eng+rus', { logger: () => {} });
-                        const text = (data?.text || '').trim();
-                        const ocrText = text || '[No textual content detected in the image]';
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(ocrText)}`, mimeType: 'text/plain' };
-                    } catch (e) {
-                        console.error('Failed to OCR image for AI context:', e);
-                        const errorContent = 'Error: Could not extract text from this image.';
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(errorContent)}`, mimeType: 'text/plain' };
-                    }
-                }
-                return file;
-            })
-        );
+      // Единая централизованная подготовка файла: ленивая дозагрузка из Drive и извлечение текста
+      const { extractTextForAttachedFile } = await import('./utils/extractText');
+      const MAX_TEXT = 40000;
+      const filesForContext = await Promise.all(
+        focusedFiles.map(async (orig) => {
+          let file = orig;
+          if ((!file.content || !file.content.includes(',')) && file.source?.provider === 'gdrive' && file.source.fileId) {
+            try {
+              const dl = await googleDriveService.downloadFile(file.source.fileId);
+              file = { ...file, content: dl.content, mimeType: dl.mimeType, size: dl.size };
+            } catch (e) { console.error('Failed to lazy download from Drive', e); }
+          }
+          try {
+            const text = await extractTextForAttachedFile(file);
+            const clipped = text.length > MAX_TEXT ? (text.slice(0, MAX_TEXT) + `\n\n...[TRUNCATED ${text.length - MAX_TEXT} CHARS]...`) : text;
+            if (clipped) {
+              return { ...file, content: `data:text/plain;base64,${utf8_to_b64(clipped)}`, mimeType: 'text/plain' };
+            }
+          } catch (e) { console.error('Failed to extract text centrally', e); }
+          return file;
+        })
+      );
 
       const thinkingStage = filesForContext.length > 0
           ? `Analyzing ${filesForContext.length} file(s)...`
