@@ -26,7 +26,7 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelect
     }, [messages, isLoading]);
 
     return (
-        <div className="p-4 space-y-6 container mx-auto px-4 w-full max-w-5xl">
+        <div className="p-4 space-y-6 w-full max-w-4xl mx-auto">
             {messages.map((msg, index) => {
                 if (msg.role === 'system') {
                      const text = msg.content.text;
@@ -72,7 +72,7 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelect
                         )}
                         {msg.content.text && (
                             <div
-                                className={`px-4 py-3 rounded-2xl prose prose-invert prose-sm max-w-none w-fit ${
+                                className={`px-4 py-3 rounded-2xl prose prose-invert prose-sm max-w-[85%] w-fit ${
                                 msg.role === 'user'
                                 ? 'bg-brand-700 text-white rounded-br-lg'
                                 : 'bg-neutral-800 text-neutral-200 rounded-bl-lg'

@@ -85,6 +85,10 @@ interface SplitViewProps {
     onSaveFile: (operations: FileOperation[]) => void;
     pendingPatches: PatchFileOperation | null;
     onPatchesConsumed: () => void;
+    onClearPausedSession?: () => void;
+    onMarkAsUnsaved?: () => void;
+    isPausedSession?: boolean;
+    onCloseSplitView?: () => void;
 }
 
 const SplitView: React.FC<SplitViewProps> = ({ 
@@ -95,7 +99,11 @@ const SplitView: React.FC<SplitViewProps> = ({
     onSendMessage, 
     onSaveFile,
     pendingPatches,
-    onPatchesConsumed
+    onPatchesConsumed,
+    onClearPausedSession,
+    onMarkAsUnsaved,
+    isPausedSession = false,
+    onCloseSplitView
 }) => {
     const [localAsset, setLocalAsset] = useState(asset);
     const [animatedLines, setAnimatedLines] = useState<{ text: string; state: string }[] | null>(null);
@@ -110,42 +118,38 @@ const SplitView: React.FC<SplitViewProps> = ({
     }, [asset]);
 
     useEffect(() => {
-        if (pendingPatches && pendingPatches.path === localAssetRef.current.name) {
-            const base64 = localAssetRef.current.content?.split(',')[1] || '';
-            const originalContent = b64_to_utf8(base64);
-            
-            const { newContent, animatedLines: newAnimatedLines } = applyPatches(originalContent, pendingPatches.patches);
-            
-            setAnimatedLines(newAnimatedLines);
-            setHasPendingAiChanges(true);
+        if (pendingPatches) {
+            // Check if the patch is for the current asset
+            const patchPath = pendingPatches.path || '';
+            const patchBaseName = patchPath.split('/').pop() || patchPath;
+            const currentName = localAssetRef.current.name;
+            const currentId = localAssetRef.current.id;
 
-            const updatedAsset: AttachedFile = { 
-                ...localAssetRef.current, 
-                content: `data:text/plain;base64,${utf8_to_b64(newContent)}`, 
-                mimeType: 'text/plain' 
-            };
-            
-            setLocalAsset(updatedAsset);
-            localAssetRef.current = updatedAsset;
-            
-            onPatchesConsumed();
+            if (patchBaseName === currentName || patchPath === currentId) {
+                
+                const base64 = localAssetRef.current.content?.split(',')[1] || '';
+                const originalContent = b64_to_utf8(base64);
+                
+                const { newContent, animatedLines: newAnimatedLines } = applyPatches(originalContent, pendingPatches.patches);
+                
+                setAnimatedLines(newAnimatedLines);
+                setHasPendingAiChanges(true);
+
+                const updatedAsset: AttachedFile = { 
+                    ...localAssetRef.current, 
+                    content: `data:text/plain;base64,${utf8_to_b64(newContent)}`, 
+                    mimeType: 'text/plain' 
+                };
+                
+                setLocalAsset(updatedAsset);
+                localAssetRef.current = updatedAsset;
+                
+                onPatchesConsumed();
+                onMarkAsUnsaved?.(); // Mark as unsaved when AI makes changes
+            }
         }
-    }, [pendingPatches, onPatchesConsumed]);
+    }, [pendingPatches, onPatchesConsumed, asset.name]);
 
-    const handleSave = () => {
-        const finalAsset = localAssetRef.current;
-        const content = finalAsset.content?.includes('base64,') 
-            ? b64_to_utf8(finalAsset.content.split(',')[1])
-            : '';
-            
-        const saveOperation: FileOperation = {
-            operation: 'EDIT_FILE',
-            path: finalAsset.name,
-            content: content,
-        };
-        onSaveFile([saveOperation]);
-        setHasPendingAiChanges(false);
-    };
 
     const handleUserContentUpdate = (updatedAsset: AttachedFile) => {
         setLocalAsset(updatedAsset);
@@ -156,12 +160,68 @@ const SplitView: React.FC<SplitViewProps> = ({
         }
     };
 
+    const handleSaveFromDocumentViewer = (updatedAsset: AttachedFile) => {
+        // Update local asset
+        setLocalAsset(updatedAsset);
+        localAssetRef.current = updatedAsset;
+        
+        // Save to file system
+        const content = updatedAsset.content?.includes('base64,') 
+            ? b64_to_utf8(updatedAsset.content.split(',')[1])
+            : '';
+            
+        const saveOperation: FileOperation = {
+            operation: 'EDIT_FILE',
+            path: updatedAsset.name,
+            content: content,
+        };
+        onSaveFile([saveOperation]);
+        
+        // Clear AI changes state
+        setAnimatedLines(null);
+        setHasPendingAiChanges(false);
+        
+        // Clear paused session since we saved (only for paused sessions)
+        if (isPausedSession) {
+            onClearPausedSession?.();
+        }
+    };
+
+    const handleSaveAiChanges = () => {
+        // Save the current localAsset (which contains AI changes) to file system
+        const content = localAssetRef.current.content?.includes('base64,') 
+            ? b64_to_utf8(localAssetRef.current.content.split(',')[1])
+            : '';
+            
+        const saveOperation: FileOperation = {
+            operation: 'EDIT_FILE',
+            path: localAssetRef.current.name,
+            content: content,
+        };
+        onSaveFile([saveOperation]);
+        
+        // Clear AI changes state
+        setAnimatedLines(null);
+        setHasPendingAiChanges(false);
+        
+        // Clear paused session since we saved (only for paused sessions)
+        if (isPausedSession) {
+            onClearPausedSession?.();
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-40 bg-neutral-950/80 backdrop-blur-md flex flex-col animate-fade-scale-in">
             <header className="flex items-center justify-between p-4 border-b border-neutral-800/80 shrink-0">
                  <h2 className="text-xl font-bold text-neutral-100">AI Editing Session</h2>
                  <button
-                    onClick={() => onPauseSession(localAssetRef.current, messages)}
+                    onClick={() => {
+                        if (hasPendingAiChanges) {
+                            onPauseSession(localAssetRef.current, messages);
+                        } else {
+                            onCloseSplitView && onCloseSplitView();
+                        }
+                    }}
                     className="p-2 rounded-full hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
                     aria-label="Close editing session"
                 >
@@ -182,6 +242,7 @@ const SplitView: React.FC<SplitViewProps> = ({
                             setHasPendingAiChanges(false);
                         }}
                         aiHasChanges={hasPendingAiChanges}
+                        onSaveForSplitView={animatedLines ? handleSaveAiChanges : handleSaveFromDocumentViewer}
                     />
                 </div>
                 {/* Right Panel: Chat */}

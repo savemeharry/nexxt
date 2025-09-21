@@ -71,15 +71,19 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ goal, users, onTaskDrop, onEditTa
                                 {status}
                             </h3>
                             <div className="flex-grow p-3 space-y-3 overflow-y-auto">
-                                {goal.tasks.filter(task => task.status === status).map(task => (
-                                    <TaskCard 
-                                        key={task.id} 
-                                        task={task} 
-                                        assignee={users.find(u => u.id === task.assigneeId) || null}
-                                        onDragStart={(e) => handleDragStart(e, task)}
-                                        onEdit={() => onEditTask(task)}
-                                    />
-                                ))}
+                                {(() => {
+                                    const tasksForStatus = goal.tasks.filter(task => task.status === status);
+                                    const uniqueTasks = tasksForStatus.filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i);
+                                    return uniqueTasks.map((task, idx) => (
+                                        <TaskCard 
+                                            key={`${task.id}-${status}-${idx}`}
+                                            task={task} 
+                                            assignee={users.find(u => u.id === task.assigneeId) || null}
+                                            onDragStart={(e) => handleDragStart(e, task)}
+                                            onEdit={() => onEditTask(task)}
+                                        />
+                                    ));
+                                })()}
                             </div>
                         </>
                     );
@@ -95,7 +99,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ goal, users, onTaskDrop, onEditTa
                                 onDragLeave={handleDragLeave}
                                 className="w-1/3 min-w-[300px] done-column-container"
                             >
-                                <div className={`${doneColumnInnerBg} w-full h-full flex flex-col rounded-[7px]`}>
+                                <div className={`${doneColumnInnerBg} w-full h-full flex flex-col rounded-[7px] relative overflow-hidden`}>
+                                    <div className="pointer-events-none absolute inset-0 rounded-[7px] ring-1 ring-inset ring-neutral-200/50 dark:ring-neutral-700/60" />
                                     {content}
                                 </div>
                             </div>

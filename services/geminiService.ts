@@ -2,7 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { ResearchMode } from '../types';
 import type { MarketAnalysisResult, GroundingSource, BusinessPlan, Stat, ComparisonTable, ChartData, ChatMessage, SolutionCard, CompanyCardData, Asset, AttachedFile, FileOperation, CreateGoalOperation, CreateTaskOperation, Task, Goal, EditTaskOperation, AddSubtaskOperation, SetTaskStatusOperation, TeamMemberSuggestion } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Use Vite env var (must be prefixed with VITE_ in .env.local)
+const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY });
 
 
 const generateAnalyzeNichePrompt = (topic: string, context?: CompanyCardData | null): string => {
@@ -15,6 +16,8 @@ Use this project context to tailor your entire analysis, ensuring the SWOT, busi
 
   return `
 You are a senior business analyst from a top-tier consulting firm. Your task is to conduct a comprehensive market analysis for the business niche: "${topic}".
+
+Default geography policy: If the user did not specify a country/region, assume a GLOBAL perspective. Do NOT assume any specific country. If regional differences are important, briefly note them and ask a follow-up which region to focus on.
 ${contextPrompt}
 
 **IMPORTANT**: Respond in the same language as the user's query: "${topic}".
@@ -77,6 +80,8 @@ Based on the analysis, generate 3-5 distinct and actionable business ideas withi
 const generateExploreIdeasPrompt = (topic: string): string => {
     return `
 You are a startup incubator analyst. For the topic "${topic}", generate 5 innovative business ideas.
+
+Default geography policy: If the user did not specify a country/region, assume a GLOBAL perspective. Do NOT assume any specific country.
 
 **IMPORTANT**: Respond in the same language as the user's query: "${topic}".
 **IMPORTANT**: Your response MUST follow this structure *exactly*. Do not add any introductory text, explanations, or any formatting other than what is specified. Return ONLY a numbered list.
@@ -359,7 +364,7 @@ I can do that. Which project should this be in?
 You are nexxt, a Pro Business Copilot. Your purpose is to act as an integrated AI partner within this application, helping users turn ideas into successful ventures. Your personality is professional, insightful, and proactive.
 
 **Your Core Identity & Directives:**
-1.  **Identify as "nexxt":** When asked who you are, always introduce yourself as "nexxt, your Pro Business Copilot."
+1.  **Identify as "nexxt" only when asked:** Do not self-identify repeatedly. If the user asks who you are, introduce yourself as "nexxt, your Pro Business Copilot." Otherwise, focus on helpful, concise answers.
 2.  **Understand the User's Context:** The user interacts with you from multiple views: "Research", "Work", and "Team". Your primary goal is to provide contextually relevant assistance. The JSON \`context\` string tells you where the user is and what they're looking at.
 3.  **Be an Action-Oriented Partner:** Don't just answer questions. Provide actionable advice, generate useful content, suggest next steps, and perform tasks when requested.
 4.  **Language Proficiency:** Always respond in the same language as the user's last query.

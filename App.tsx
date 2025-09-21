@@ -28,6 +28,12 @@ import TeamView from './components/TeamView';
 import SplitView from './components/SplitView';
 import ResumeEditingBanner from './components/ResumeEditingBanner';
 
+interface PausedEditorSession {
+    asset: AttachedFile;
+    messages: ChatMessage[];
+    projectId: string;
+}
+
 // Helper functions for DOCX processing
 declare const mammoth: any;
 
@@ -117,15 +123,29 @@ const findAssetsByIds = (assets: Asset[], ids: string[]): AttachedFile[] => {
     return foundFiles;
 };
 
-// Helper to recursively remove 'content' from files to avoid localStorage quota issues
-const stripContentFromAssets = (assets: Asset[]): Asset[] => {
+// Storage policy: keep content for small text-like files; strip for large/binary to avoid quota
+const isTextLikeFile = (file: AttachedFile): boolean => {
+    const name = file.name.toLowerCase();
+    const mime = (file.mimeType || '').toLowerCase();
+    return (
+        mime.startsWith('text/') ||
+        ['application/json','application/xml','application/sql','application/x-markdown','text/markdown','text/csv'].includes(mime) ||
+        name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.csv') || name.endsWith('.json')
+    );
+};
+
+const stripContentFromAssets = (assets: Asset[], sizeLimitBytes: number = 200_000): Asset[] => {
     return assets.map(asset => {
         if (asset.type === 'folder') {
-            return { ...asset, children: stripContentFromAssets(asset.children) };
+            return { ...asset, children: stripContentFromAssets(asset.children, sizeLimitBytes) };
         }
-        // For files, create a new object without the content
-        const { content, ...restOfAsset } = asset as AttachedFile;
-        return restOfAsset as Asset; // Cast it back to Asset
+        const file = asset as AttachedFile;
+        if (isTextLikeFile(file) && typeof file.size === 'number' && file.size <= sizeLimitBytes && file.content) {
+            // Keep inline content for small text-like files
+            return file;
+        }
+        const { content, ...restOfAsset } = file;
+        return restOfAsset as Asset;
     });
 };
 
@@ -170,6 +190,7 @@ const App: React.FC = () => {
   const [splitViewAsset, setSplitViewAsset] = useState<AttachedFile | null>(null);
   const [pendingPatches, setPendingPatches] = useState<PatchFileOperation | null>(null);
   const [pausedEditorSession, setPausedEditorSession] = useState<PausedEditorSession | null>(null);
+  const [isDocumentSaved, setIsDocumentSaved] = useState<boolean>(true);
   
   // Google Drive State
   const [googleUser, setGoogleUser] = useState<GoogleUserProfile | null>(null);
@@ -701,10 +722,86 @@ const App: React.FC = () => {
           }
           
           if (response.fileOperations && response.fileOperations.length > 0 && currentProject) {
+                // Helper to apply goal/task operations to a project object
+                const applyGoalTaskOperations = (project: typeof currentProject, ops: FileOperation[]) => {
+                    if (!project) return project;
+                    const updated = { ...project };
+                    if (!updated.goals) updated.goals = [];
+
+                    const ensureGoal = (title: string, description = '') => {
+                        let goal = updated.goals!.find(g => g.title === title);
+                        if (!goal) {
+                            goal = { id: `goal-${Date.now()}-${Math.random().toString(36).slice(2)}`, title, description, tasks: [] };
+                            updated.goals!.push(goal);
+                        }
+                        return goal;
+                    };
+
+                    ops.forEach((op) => {
+                        switch (op.operation) {
+                            case 'CREATE_GOAL': {
+                                ensureGoal(op.title, op.description || '');
+                                break;
+                            }
+                            case 'CREATE_TASK': {
+                                const goal = ensureGoal(op.goalTitle);
+                                // Avoid duplicate by title within the goal
+                                if (goal.tasks.some(t => t.title === op.title)) break;
+                                const newTask: Task = {
+                                    id: `task-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                                    title: op.title,
+                                    description: op.description || '',
+                                    status: 'To Do',
+                                    priority: op.priority || 'Medium',
+                                    subtasks: [],
+                                    attachments: [],
+                                };
+                                goal.tasks.push(newTask);
+                                break;
+                            }
+                            case 'EDIT_TASK': {
+                                const goal = updated.goals!.find(g => g.title === op.goalTitle);
+                                const task = goal?.tasks.find(t => t.title === op.taskTitle);
+                                if (task) {
+                                    if (op.newTitle) task.title = op.newTitle;
+                                    if (op.newDescription !== undefined) task.description = op.newDescription;
+                                    if (op.newPriority) task.priority = op.newPriority;
+                                    if (op.newDueDate !== undefined) task.dueDate = op.newDueDate;
+                                }
+                                break;
+                            }
+                            case 'ADD_SUBTASK': {
+                                const goal = updated.goals!.find(g => g.title === op.goalTitle);
+                                const task = goal?.tasks.find(t => t.title === op.taskTitle);
+                                if (task) {
+                                    task.subtasks.push({ id: `sub-${Date.now()}-${Math.random().toString(36).slice(2)}`, text: op.subtaskText, completed: false });
+                                }
+                                break;
+                            }
+                            case 'SET_TASK_STATUS': {
+                                const goal = updated.goals!.find(g => g.title === op.goalTitle);
+                                const task = goal?.tasks.find(t => t.title === op.taskTitle);
+                                if (task) {
+                                    task.status = op.newStatus;
+                                }
+                                break;
+                            }
+                        }
+                    });
+
+                    return updated;
+                };
+
                 if (splitViewAsset || isInitiatingSplitView) {
+                    // Apply live patch to SplitView and still handle goal/task ops immediately
                     const patchOp = response.fileOperations.find(op => op.operation === 'PATCH_FILE') as PatchFileOperation;
                     if (patchOp) {
                         setPendingPatches(patchOp);
+                    }
+                    const nonPatchOps = response.fileOperations.filter(op => op.operation !== 'PATCH_FILE');
+                    if (nonPatchOps.length > 0) {
+                        const updatedProjectData = applyGoalTaskOperations(currentProject, nonPatchOps);
+                        handleUpdateCompany(updatedProjectData);
                     }
                 } else {
                     let updatedProjectData = { ...currentProject };
@@ -713,7 +810,13 @@ const App: React.FC = () => {
                     const { updatedAssets, lastTouchedAsset } = assetManager.execute(response.fileOperations);
                     updatedProjectData.assets = updatedAssets;
                     touchedAsset = lastTouchedAsset;
-                    // ... rest of goal/task operation logic
+
+                    // Apply goal/task operations
+                    const goalTaskOps = response.fileOperations.filter(op => op.operation === 'CREATE_GOAL' || op.operation === 'CREATE_TASK' || op.operation === 'EDIT_TASK' || op.operation === 'ADD_SUBTASK' || op.operation === 'SET_TASK_STATUS');
+                    if (goalTaskOps.length > 0) {
+                        updatedProjectData = applyGoalTaskOperations(updatedProjectData, goalTaskOps);
+                    }
+
                     handleUpdateCompany(updatedProjectData);
                     if (touchedAsset) {
                         setSelectedAssetInProject(touchedAsset);
@@ -740,8 +843,12 @@ const App: React.FC = () => {
         const updatedProject = { ...selectedCompany, assets: updatedAssets };
         handleUpdateCompany(updatedProject);
 
-        setSplitViewAsset(null);
-        setPausedEditorSession(null);
+        // Update the splitViewAsset with the saved changes to avoid "unsaved changes" warning
+        if (lastTouchedAsset && splitViewAsset) {
+            const updatedSplitViewAsset = { ...splitViewAsset, ...lastTouchedAsset };
+            setSplitViewAsset(updatedSplitViewAsset);
+        }
+
         if (lastTouchedAsset) {
             setSelectedAssetInProject(lastTouchedAsset);
             setHighlightedAssetId(lastTouchedAsset.id);
@@ -749,18 +856,59 @@ const App: React.FC = () => {
     };
 
     const handlePauseEditorSession = (asset: AttachedFile, messages: ChatMessage[]) => {
-        setPausedEditorSession({ asset, messages });
+        if (!selectedCompanyId) return; // Safety check
+        
+        setPausedEditorSession({ 
+            asset, 
+            messages, 
+            projectId: selectedCompanyId 
+        });
         setSplitViewAsset(null);
         setChatMessages(messages); // Keep chat history visible
+        setIsDocumentSaved(false); // Mark as unsaved when pausing session
     };
 
     const handleResumeEditorSession = () => {
         if (pausedEditorSession) {
             setSplitViewAsset(pausedEditorSession.asset);
             setChatMessages(pausedEditorSession.messages);
-            setPausedEditorSession(null);
+            // Don't clear pausedEditorSession here - we need it to know which project to save to
+            setIsDocumentSaved(false); // Reset to unsaved when resuming
         }
     };
+
+    const handleDocumentSaved = () => {
+        setIsDocumentSaved(true);
+        setPausedEditorSession(null); // Clear paused session when document is saved
+    };
+
+    const handleSaveFromPausedSession = (fileOperations: FileOperation[]) => {
+        if (!pausedEditorSession) return;
+        
+        // Find the correct project for this paused session
+        const correctProject = companyCards.find(c => c.id === pausedEditorSession.projectId);
+        if (!correctProject) return;
+        
+        const assetManager = new AssetManager(correctProject.assets);
+        const { updatedAssets, lastTouchedAsset } = assetManager.execute(fileOperations);
+        
+        const updatedProject = { ...correctProject, assets: updatedAssets };
+        handleUpdateCompany(updatedProject);
+
+        if (lastTouchedAsset) {
+            setSelectedAssetInProject(lastTouchedAsset);
+            setHighlightedAssetId(lastTouchedAsset.id);
+        }
+        
+        // Mark as saved and clear paused session
+        setIsDocumentSaved(true);
+        setPausedEditorSession(null);
+    };
+
+    const handleMarkAsUnsaved = () => {
+        setIsDocumentSaved(false);
+    };
+
 
 
   const handleSelectProjectFromChat = (projectId: string) => {
@@ -821,19 +969,6 @@ const App: React.FC = () => {
 
   const renderResearchView = () => (
     <>
-        <div className="w-full max-w-4xl mx-auto z-10 sticky top-20">
-            <SearchBar
-                topic={topic}
-                setTopic={setTopic}
-                mode={mode}
-                setMode={setMode}
-                onSearch={handleSearch}
-                isLoading={isLoading}
-                onToggleHistory={() => setIsHistoryOpen(true)}
-                researchContextProject={researchContextProject}
-                onClearResearchContext={handleClearResearchContext}
-            />
-        </div>
         <div className="flex-grow w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
             {stage === 'IDLE' && !isLoading && !marketAnalysis && (
                 researchContextProject ? (
@@ -886,7 +1021,7 @@ const App: React.FC = () => {
                 onLogoClick={() => setIsLandingPageVisible(true)}
             />
 
-            <main className="flex-grow pt-16 flex flex-col overflow-y-auto bg-neutral-50 dark:bg-neutral-950 rockstar:bg-black relative pb-32">
+            <main className="flex-grow pt-16 flex flex-col overflow-y-auto bg-neutral-50 dark:bg-neutral-950 rockstar:bg-black relative pb-48">
                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow flex flex-col">
                     {activeView === 'DASHBOARD' && <DashboardView cards={companyCards} users={users} onSelectCard={(id) => { setActiveView('WORK'); setSelectedCompanyId(id); }} onShowAddCardModal={() => { setEditingCard(null); setIsProjectModalOpen(true); }} onStartResearch={() => setActiveView('RESEARCH')} />}
                     {activeView === 'RESEARCH' && renderResearchView()}
@@ -898,16 +1033,48 @@ const App: React.FC = () => {
             {isLoading && <Loader message={loadingMessage} />}
             <HistoryPanel history={history} isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} onSelect={(result) => { setMarketAnalysis(result); setTopic(result.topic); setMode(result.mode); setStage('RESEARCH'); setIsHistoryOpen(false); }} onClear={() => updateHistory([])} currentResultId={marketAnalysis?.id} />
             {isChatPanelVisible && <ChatPanel messages={chatMessages} isLoading={isChatLoading} onClose={() => setIsChatPanelVisible(false)} onSelectProject={handleSelectProjectFromChat} onSendMessage={handleSendChatMessage} aiFeedback={aiFeedback} />}
-            {splitViewAsset && <SplitView asset={splitViewAsset} messages={chatMessages} isLoading={isChatLoading} onPauseSession={handlePauseEditorSession} onSendMessage={handleSendChatMessage} onSaveFile={handleSaveFileFromSplitView} pendingPatches={pendingPatches} onPatchesConsumed={() => setPendingPatches(null)} />}
+            {splitViewAsset && <SplitView 
+                asset={splitViewAsset} 
+                messages={chatMessages} 
+                isLoading={isChatLoading} 
+                onPauseSession={handlePauseEditorSession} 
+                onSendMessage={handleSendChatMessage} 
+                onSaveFile={pausedEditorSession ? handleSaveFromPausedSession : handleSaveFileFromSplitView} 
+                pendingPatches={pendingPatches} 
+                onPatchesConsumed={() => setPendingPatches(null)} 
+                onClearPausedSession={handleDocumentSaved} 
+                onMarkAsUnsaved={handleMarkAsUnsaved}
+                isPausedSession={!!pausedEditorSession}
+                onCloseSplitView={() => setSplitViewAsset(null)}
+            />}
             {isProjectModalOpen && <ProjectModal onClose={() => { setIsProjectModalOpen(false); setEditingCard(null); }} onSave={handleSaveCard} initialData={editingCard} />}
             {isArchiveModalOpen && <TrashModal isOpen={isArchiveModalOpen} onClose={() => setIsArchiveModalOpen(false)} cards={archivedCards} onRestore={handleUnarchiveCard} onDeletePermanently={handleDeletePermanently} onEmptyTrash={handleClearArchive} />}
             {isSettingsModalOpen && <SettingsModal onClose={() => setIsSettingsModalOpen(false)} currentTheme={theme} setTheme={setTheme} />}
 
-            {pausedEditorSession && <ResumeEditingBanner session={pausedEditorSession} onResume={handleResumeEditorSession} />}
+            {pausedEditorSession && !isDocumentSaved && <ResumeEditingBanner session={pausedEditorSession} onResume={handleResumeEditorSession} />}
 
             <div className="fixed bottom-0 left-0 right-0 z-20 flex justify-center p-4 pointer-events-none">
-                <div className="w-full max-w-4xl mx-auto pointer-events-auto">
-                    {activeView !== 'DASHBOARD' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
+                <div className="w-full max-w-4xl mx-auto pointer-events-auto relative z-20">
+                    {activeView === 'RESEARCH' && stage !== 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
+                        <SearchBar
+                            topic={topic}
+                            setTopic={setTopic}
+                            mode={mode}
+                            setMode={setMode}
+                            onSearch={handleSearch}
+                            isLoading={isLoading}
+                            onToggleHistory={() => setIsHistoryOpen(true)}
+                            researchContextProject={researchContextProject}
+                            onClearResearchContext={handleClearResearchContext}
+                        />
+                    )}
+                    {activeView === 'RESEARCH' && stage === 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
+                         <>
+                            {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay stage={aiFeedback.stage} files={aiFeedback.files} /> </div> )}
+                            <ChatBar onSendMessage={handleSendChatMessage} isLoading={isChatLoading} onShowChat={() => setIsChatPanelVisible(true)} hasMessages={chatMessages.length > 0} />
+                        </>
+                    )}
+                    {activeView !== 'DASHBOARD' && activeView !== 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
                          <>
                             {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay stage={aiFeedback.stage} files={aiFeedback.files} /> </div> )}
                             <ChatBar onSendMessage={handleSendChatMessage} isLoading={isChatLoading} onShowChat={() => setIsChatPanelVisible(true)} hasMessages={chatMessages.length > 0} />
@@ -915,6 +1082,11 @@ const App: React.FC = () => {
                     )}
                 </div>
             </div>
+            {/* Global bottom gradient overlay (full-width), placed behind input panels */}
+            {(((activeView === 'RESEARCH') && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession) ||
+              ((activeView !== 'DASHBOARD' && activeView !== 'RESEARCH') && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession)) && (
+                <div className="fixed bottom-0 left-0 right-0 h-44 pointer-events-none bg-gradient-to-t from-white/70 to-transparent dark:from-black/70 rockstar:from-black/80 z-10" />
+            )}
         </div>
     </>
   );

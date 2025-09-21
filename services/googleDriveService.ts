@@ -3,8 +3,9 @@ import { CompanyCardData, Asset, AttachedFile, GoogleUserProfile } from '../type
 declare let google: any;
 declare let gapi: any;
 
-const API_KEY = process.env.API_KEY;
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+// Vite uses import.meta.env and requires VITE_ prefix for exposure to client
+const API_KEY = (import.meta as any).env?.VITE_GOOGLE_API_KEY;
+const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 let tokenClient: any;
@@ -45,6 +46,10 @@ export const initClient = async (onAuthChange: (user: GoogleUserProfile | null) 
                 ontimeout: reject
             });
         });
+
+        if (!API_KEY || !CLIENT_ID) {
+            throw new Error('Missing Google API env vars. Expected VITE_GOOGLE_API_KEY and VITE_GOOGLE_CLIENT_ID in .env.local');
+        }
 
         await gapi.client.init({
             apiKey: API_KEY,

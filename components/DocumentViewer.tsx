@@ -21,6 +21,7 @@ interface DocumentViewerProps {
     animatedLines?: { text: string; state: string }[] | null;
     onClearAnimatedLines?: () => void;
     aiHasChanges?: boolean;
+    onSaveForSplitView?: (updatedAsset: AttachedFile) => void;
 }
 
 const dataUrlToBlob = (dataUrl: string): Blob | null => {
@@ -109,10 +110,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
     asset, 
     onUpdateAsset, 
     onSelectAsset, 
-    isSplitViewMode = false, 
+    isSplitViewMode = false,
     animatedLines,
     onClearAnimatedLines,
     aiHasChanges,
+    onSaveForSplitView,
 }) => {
     const [fileName, setFileName] = useState('');
     const [initialHtml, setInitialHtml] = useState('');
@@ -393,7 +395,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
                  <div className="p-4 h-full flex flex-col w-full">
                      <div className="flex items-center gap-4 mb-2 shrink-0">
                         <span className="flex-grow bg-transparent text-lg font-semibold text-neutral-900 dark:text-neutral-100">{fileName}</span>
-                        {isSplitViewMode && <button onClick={() => onUpdateAsset(currentFile)} disabled={!aiHasChanges} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
+                        {isSplitViewMode && <button onClick={() => onSaveForSplitView?.(currentFile)} disabled={!aiHasChanges} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
                            Save Changes
                         </button>}
                     </div>
@@ -468,7 +470,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
                             className="flex-grow bg-transparent text-lg font-semibold text-neutral-900 dark:text-neutral-100 focus:outline-none border-b-2 border-transparent focus:border-brand-500 rockstar:focus:border-rockstar-500"
                             disabled={isAiEditing}
                         />
-                        <button onClick={handleSaveText} disabled={!(isChanged || aiHasChanges)} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
+                        <button onClick={isSplitViewMode ? () => onSaveForSplitView?.(currentFile) : handleSaveText} disabled={!(isChanged || aiHasChanges)} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
                            {isSplitViewMode ? 'Save Changes' : 'Save'}
                         </button>
                     </div>
