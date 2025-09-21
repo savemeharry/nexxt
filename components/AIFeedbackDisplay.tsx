@@ -10,6 +10,13 @@ interface AIFeedbackDisplayProps {
 }
 
 const AIFeedbackDisplay: React.FC<AIFeedbackDisplayProps> = ({ stage, files }) => {
+    const handleStop = () => {
+        try {
+            // Dynamically import to avoid circular deps
+            import('../services/geminiService').then(m => m.cancelActiveRun && m.cancelActiveRun());
+        } catch {}
+    };
+
     return (
         <div className="bg-neutral-800/60 backdrop-blur-md border border-neutral-700/50 rounded-lg p-3 w-full animate-fade-scale-in text-sm">
             <div className="flex items-center gap-3 text-neutral-200">
@@ -28,6 +35,7 @@ const AIFeedbackDisplay: React.FC<AIFeedbackDisplayProps> = ({ stage, files }) =
                     ))}
                 </div>
             )}
+            <button onClick={handleStop} className="mt-2 px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700">Стоп</button>
         </div>
     );
 };

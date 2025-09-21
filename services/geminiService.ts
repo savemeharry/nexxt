@@ -6,6 +6,24 @@ import type { MarketAnalysisResult, GroundingSource, BusinessPlan, Stat, Compari
 // Use Vite env var (must be prefixed with VITE_ in .env.local)
 const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY });
 
+// Global abort controller to support cancelling long AI operations
+let activeAbortController: AbortController | null = null;
+const REQUEST_TIMEOUT_MS = 120000; // 2 minutes hard cap per attempt
+
+const newRun = () => {
+    if (activeAbortController) {
+        try { activeAbortController.abort(); } catch {}
+    }
+    activeAbortController = new AbortController();
+    return activeAbortController;
+};
+
+export const cancelActiveRun = () => {
+    if (activeAbortController) {
+        try { activeAbortController.abort(); } catch {}
+    }
+};
+
 
 const generateAnalyzeNichePrompt = (topic: string, context?: CompanyCardData | null): string => {
   const contextPrompt = context 
@@ -182,6 +200,24 @@ const b64_to_utf8 = (str: string): string => {
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const sleepWithAbort = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('ABORTED'));
+    const id = setTimeout(resolve, ms);
+    if (signal) {
+        const onAbort = () => { clearTimeout(id); reject(new Error('ABORTED')); };
+        signal.addEventListener('abort', onAbort, { once: true });
+    }
+});
+
+const withTimeout = async <T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> => {
+    return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+            const id = setTimeout(() => reject(new Error('TIMEOUT')), ms);
+            if (signal) signal.addEventListener('abort', () => { clearTimeout(id); reject(new Error('ABORTED')); }, { once: true });
+        })
+    ]);
+};
 
 const parseRetryMs = (error: any): number | null => {
     try {
@@ -206,7 +242,7 @@ const withRateLimit = async <T>(fn: () => Promise<T>): Promise<T> => {
     const now = Date.now();
     const waitMs = Math.max(0, lastRequestTime + MIN_INTERVAL_MS - now);
     if (waitMs > 0) {
-        await sleep(waitMs);
+        await sleepWithAbort(waitMs, activeAbortController?.signal);
     }
     try {
         const result = await fn();
@@ -221,17 +257,21 @@ const generateWithBackoff = async ({ modelCandidates, contents, config }: Genera
     for (const model of modelCandidates) {
         for (let attempt = 0; attempt < 4; attempt++) {
             try {
-                const response = await withRateLimit(() => ai.models.generateContent({ model, contents, config }));
+                if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
+                const response = await withRateLimit(() => withTimeout(ai.models.generateContent({ model, contents, config }), REQUEST_TIMEOUT_MS, activeAbortController?.signal));
                 return response;
             } catch (err: any) {
                 lastError = err;
                 const code = err?.error?.code || err?.status;
                 const status = err?.error?.status;
+                if (err && (err.message === 'ABORTED' || err.message === 'TIMEOUT')) {
+                    throw err;
+                }
                 if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
                     const base = parseRetryMs(err) ?? 15000;
                     const jitter = Math.floor(Math.random() * 5000);
                     const backoff = Math.min(base * Math.pow(2, attempt) + jitter, 60000);
-                    await sleep(backoff);
+                    await sleepWithAbort(backoff, activeAbortController?.signal);
                     continue;
                 }
                 break;
@@ -634,6 +674,7 @@ const parseBusinessPlan = (text: string): BusinessPlan => {
 
 export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, context: CompanyCardData | null = null): Promise<Omit<MarketAnalysisResult, 'id' | 'topic' | 'mode'>> => {
   try {
+    newRun();
     const prompt = mode === ResearchMode.Analyze 
         ? generateAnalyzeNichePrompt(topic, context)
         : generateExploreIdeasPrompt(topic);
@@ -669,6 +710,7 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
 
 export const fetchBusinessPlan = async (marketContext: string, businessIdea: string): Promise<BusinessPlan> => {
   try {
+    newRun();
     const prompt = generateBusinessPlanPrompt(marketContext, businessIdea);
     const response = await generateWithBackoff({
         modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
@@ -688,6 +730,7 @@ export const fetchFollowUp = async (
     chatHistory: ChatMessage[]
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
     try {
+        newRun();
         // Augment context with extracted text from attachments (PDF/images/text)
         const preparedContext = await (async () => {
             try {
