@@ -6,7 +6,12 @@ declare let gapi: any;
 // Vite uses import.meta.env and requires VITE_ prefix for exposure to client
 const API_KEY = (import.meta as any).env?.VITE_GOOGLE_API_KEY;
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+// Request Drive file scope + user profile/email to fetch avatar/name
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/userinfo.email'
+].join(' ');
 
 let tokenClient: any;
 let onAuthChangeCallback: (user: GoogleUserProfile | null) => void;
@@ -78,7 +83,7 @@ export const initClient = async (onAuthChange: (user: GoogleUserProfile | null) 
 const fetchUserProfile = async () => {
     try {
         const res = await gapi.client.request({
-            path: 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json',
+            path: 'https://www.googleapis.com/oauth2/v3/userinfo',
         });
         const user: GoogleUserProfile = {
             name: res.result.name,
