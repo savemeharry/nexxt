@@ -168,6 +168,56 @@ Month 3:
 `;
 };
 
+const generateFollowUpPrompt = (question: string, context: string, chatHistory: ChatMessage[]): string => {
+    const contextInfo = (() => {
+        try {
+            const parsed = JSON.parse(context);
+            if (parsed.view === 'RESEARCH') {
+                return 'You are assisting with research and market analysis tasks.';
+            } else if (parsed.view === 'PROJECT' && parsed.project) {
+                return `You are helping with project: "${parsed.project.title}". Project description: "${parsed.project.description}".`;
+            } else if (parsed.view === 'TEAM') {
+                return 'You are assisting with team management and collaboration.';
+            } else if (parsed.focusedFiles && parsed.focusedFiles.length > 0) {
+                const fileNames = parsed.focusedFiles.map((f: any) => f.name).join(', ');
+                return `You are working with these files: ${fileNames}. Use the file contents provided in context to give accurate, specific answers.`;
+            }
+            return 'You are a helpful AI assistant for business and project management.';
+        } catch {
+            return 'You are a helpful AI assistant for business and project management.';
+        }
+    })();
+
+    // Format chat history for context
+    const historyText = chatHistory.length > 0 
+        ? chatHistory.slice(-6).map(msg => `${msg.role}: ${msg.content.text}`).join('\n')
+        : '';
+
+    return `${contextInfo}
+
+${historyText ? `Previous conversation:\n${historyText}\n\n` : ''}
+
+User question: ${question}
+
+Context: ${context}
+
+Please provide a helpful, accurate response. If you find relevant information online, include useful links at the end of your response.
+
+**IMPORTANT**: If you want to include solution cards or links, format them using this structure at the END of your response:
+
+[SOLUTION_CARDS_START]
+[
+  {
+    "title": "Title of the resource",
+    "description": "Brief description",
+    "link": "https://example.com"
+  }
+]
+[SOLUTION_CARDS_END]
+
+Respond naturally and conversationally. Use web search when helpful for current information.`;
+};
+
 const flattenAssetsForAI = (assets: Asset[], path = ''): string => {
     let structure = '';
     for (const asset of assets) {
