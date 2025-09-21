@@ -14,7 +14,13 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
     <!-- PDF.js for client-side PDF text extraction in AI context -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-2rk2v9+gqRM9w7qT2E8G0QsvkqW3GfO7bdD6Oa1l2c5J3Qf1n2o2XKQm3m3G4gWc9Qjpl9KkD6PXj0t+0U2sPg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+      // Set PDF.js worker source explicitly
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+    </script>
     <!-- Tesseract.js for client-side OCR of images (eng+rus) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script async defer src="https://apis.google.com/js/api.js"></script>
