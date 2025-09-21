@@ -249,14 +249,21 @@ export const listTextFiles = async (pageSize: number = 50) => {
     if (!gapi.client.getToken()) throw new Error("Please sign in to Google first.");
     const query = [
         "trashed=false",
-        "(mimeType contains 'text/' or ",
-        " mimeType='application/json' or mimeType='application/x-markdown' or mimeType='text/markdown' or mimeType='application/xml' or mimeType='text/csv' or ",
-        // Google Docs/Sheets/Slides
-        " mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.google-apps.presentation' or ",
-        // Common binaries
-        " mimeType='application/pdf' or mimeType contains 'image/' )"
-    ].join('');
-    const res = await gapi.client.drive.files.list({ q: query, pageSize, fields: 'files(id,name,mimeType,size)' });
+        "and (",
+        "mimeType contains 'text/'",
+        " or mimeType='application/json'",
+        " or mimeType='application/x-markdown'",
+        " or mimeType='text/markdown'",
+        " or mimeType='application/xml'",
+        " or mimeType='text/csv'",
+        " or mimeType='application/vnd.google-apps.document'",
+        " or mimeType='application/vnd.google-apps.spreadsheet'",
+        " or mimeType='application/vnd.google-apps.presentation'",
+        " or mimeType='application/pdf'",
+        " or mimeType contains 'image/'",
+        ")"
+    ].join(' ');
+    const res = await gapi.client.drive.files.list({ q: query, pageSize, fields: 'files(id,name,mimeType,size)', spaces: 'drive' });
     return res.result.files || [];
 };
 
