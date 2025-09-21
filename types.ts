@@ -140,7 +140,18 @@ export interface SetTaskStatusOperation {
     newStatus: TaskStatus;
 }
 
-export type FileOperation = CreateFileOperation | CreateFolderOperation | EditFileOperation | MoveAssetOperation | RenameAssetOperation | CreateGoalOperation | CreateTaskOperation | EditTaskOperation | AddSubtaskOperation | SetTaskStatusOperation;
+export type PatchAction = 
+    | { type: 'INSERT'; afterLineNumber: number; content: string[]; } 
+    | { type: 'REPLACE'; lineNumber: number; content: string[]; } 
+    | { type: 'DELETE'; lineNumber: number; count?: number; };
+
+export interface PatchFileOperation {
+    operation: 'PATCH_FILE';
+    path: string;
+    patches: PatchAction[];
+}
+
+export type FileOperation = CreateFileOperation | CreateFolderOperation | EditFileOperation | MoveAssetOperation | RenameAssetOperation | CreateGoalOperation | CreateTaskOperation | EditTaskOperation | AddSubtaskOperation | SetTaskStatusOperation | PatchFileOperation;
 
 export interface TeamMemberSuggestion {
     role: string;

@@ -1,26 +1,9 @@
-
-
-
 import { GoogleGenAI } from "@google/genai";
 import { ResearchMode } from '../types';
 import type { MarketAnalysisResult, GroundingSource, BusinessPlan, Stat, ComparisonTable, ChartData, ChatMessage, SolutionCard, CompanyCardData, Asset, AttachedFile, FileOperation, CreateGoalOperation, CreateTaskOperation, Task, Goal, EditTaskOperation, AddSubtaskOperation, SetTaskStatusOperation, TeamMemberSuggestion } from '../types';
 
-// Lazy client init to avoid hard-failing when API key is not set
-const getApiKey = (): string | undefined => {
-  // Prefer Vite env during build/runtime; fallback to process.env for SSR/tests
-  const viteKey = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) as string | undefined;
-  const nodeKey = (process as any)?.env?.GEMINI_API_KEY || (process as any)?.env?.API_KEY;
-  return viteKey || nodeKey || undefined;
-};
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-let cachedAi: GoogleGenAI | null = null;
-const getAIClient = (): GoogleGenAI | null => {
-  if (cachedAi) return cachedAi;
-  const key = getApiKey();
-  if (!key) return null;
-  cachedAi = new GoogleGenAI({ apiKey: key });
-  return cachedAi;
-};
 
 const generateAnalyzeNichePrompt = (topic: string, context?: CompanyCardData | null): string => {
   const contextPrompt = context 
@@ -116,6 +99,7 @@ A brief, one-sentence summary of why "${topic}" is a promising field for new ven
 `;
 };
 
+
 const generateBusinessPlanPrompt = (marketContext: string, businessIdea: string): string => {
   return `
 You are an experienced business consultant and startup mentor. Your task is to create a lean, actionable business plan for a new venture.
@@ -209,13 +193,55 @@ const generateFollowUpPrompt = (question: string, context: string, chatHistory: 
     let reportTypeContext = '';
     let focusedFileContext = '';
     let operationOverrideInstruction = '';
+    let saveFileFlowInstruction = '';
+    let liveEditingInstruction = '';
+
+    // Check for the special save prompt
+    if (question.startsWith("The user wants to save the changes to the document")) {
+        saveFileFlowInstruction = `
+**CRITICAL WORKFLOW: SAVE FILE**: The user has clicked "Save" on a document with pending changes.
+1. Your first task is to ask the user to confirm and provide a path to save the file. Be helpful, suggest the original path as a default or give examples like "folder/new-name.md".
+2. DO NOT use any file operations in this response. Just ask the question.
+3. In your *next* response, after the user provides a path, you will use the 'EDIT_FILE' or 'CREATE_FILE' operation to save the content. The application has the pending content saved and will inject it into your operation.
+`;
+    }
+
 
     try {
         const parsedContext = JSON.parse(context);
         
+        if (parsedContext.isSplitView) {
+            liveEditingInstruction = `
+**CRITICAL WORKFLOW: LIVE EDITING SESSION**: You are in a collaborative live editing session with the user in a split-screen view. Your task is to modify the document based on the user's request.
+
+**ABSOLUTE RULE for SAVING**: If the user's request is to "save", "confirm", "keep", or anything similar, your ONLY response must be a short confirmation like "Okay, saved." You MUST NOT generate a [FILE_OPERATIONS_START] block in this case. The user will click a button in the UI to perform the final save.
+
+1.  Acknowledge the user's edit request with a brief confirmation (e.g., "Okay, I'll make that change.").
+2.  Your primary output MUST be a \`PATCH_FILE\` operation inside the [FILE_OPERATIONS_START] block. DO NOT use \`EDIT_FILE\`.
+3.  Analyze the document's current content (provided in the context) and determine the line-by-line changes needed.
+4.  Construct a \`patches\` array describing these changes. The application will animate these changes for the user.
+
+**PATCH_FILE Schema:**
+\`\`\`json
+{
+  "operation": "PATCH_FILE",
+  "path": "path/to/file.md",
+  "patches": [
+    { "type": "DELETE", "lineNumber": 5, "count": 2 },
+    { "type": "INSERT", "afterLineNumber": 8, "content": ["- New bullet point 1", "- New bullet point 2"] },
+    { "type": "REPLACE", "lineNumber": 12, "content": ["This is the updated line content."] }
+  ]
+}
+\`\`\`
+- \`lineNumber\` and \`afterLineNumber\` are 1-based indexes.
+- \`content\` is an array of strings, where each string is a new line of plain text or markdown.
+- For \`REPLACE\`, the \`content\` array replaces the single line specified by \`lineNumber\`.
+- For \`DELETE\`, \`count\` is optional and defaults to 1.
+`;
+        }
+
         if (parsedContext.focusedFiles && parsedContext.focusedFiles.length > 0) {
             const files = parsedContext.focusedFiles as AttachedFile[];
-            // Set a generous but safe character limit for all combined file contents.
             const MAX_TOTAL_CONTENT_LENGTH = 80000;
             let currentTotalLength = 0;
 
@@ -338,6 +364,9 @@ You are nexxt, a Pro Business Copilot. Your purpose is to act as an integrated A
 3.  **Be an Action-Oriented Partner:** Don't just answer questions. Provide actionable advice, generate useful content, suggest next steps, and perform tasks when requested.
 4.  **Language Proficiency:** Always respond in the same language as the user's last query.
 
+${saveFileFlowInstruction}
+${liveEditingInstruction}
+
 **Context-Specific Behavior:**
 
 *   **If the context is "Research":**
@@ -383,7 +412,7 @@ ${repetitionInstruction}${operationOverrideInstruction}
 **AI Operations Schema & Examples:**
 
 You MUST return a JSON array of operations.
-**CRITICAL**: The 'content' field for CREATE_FILE and EDIT_FILE operations MUST be a valid JSON string (newlines escaped as \`\\n\`, double quotes as \`\\"\`).
+**CRITICAL**: The 'content' field for CREATE_FILE and EDIT_FILE operations MUST be a valid JSON string (newlines escaped as \`\\n\`, double quotes as \`\\"\`). When saving a file after a user provides a path, you MUST provide the 'content' field, but the application will overwrite it with the real content; you can use "..." as a placeholder.
 
 1.  **Create a File:**
     \`{ "operation": "CREATE_FILE", "path": "path/to/new_file.txt", "content": "File content." }\`
@@ -414,7 +443,9 @@ You MUST return a JSON array of operations.
 
 10. **Set Task Status:**
     \`{ "operation": "SET_TASK_STATUS", "goalTitle": "Goal Title", "taskTitle": "Target Task Title", "newStatus": "In Progress" }\`
-
+    
+11. **Patch a File (Live Editing ONLY):**
+    \`{ "operation": "PATCH_FILE", "path": "path/to/file.md", "patches": [...] }\`
 
 **Example Usage:**
 User: "Edit task 'Draft press release': set priority to Urgent and assign to Maria Garcia."
@@ -464,6 +495,7 @@ ${historyString}
 Your Comprehensive Answer:
 `;
 };
+
 
 const parseMarketAnalysis = (text: string): Omit<MarketAnalysisResult, 'id' | 'topic' | 'mode' | 'sources'> => {
     const getSection = (startTag: string, endTag: string) => text.split(startTag)[1]?.split(endTag)[0]?.trim() ?? '';
@@ -525,30 +557,14 @@ const parseBusinessPlan = (text: string): BusinessPlan => {
     };
 };
 
+
 export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, context: CompanyCardData | null = null): Promise<Omit<MarketAnalysisResult, 'id' | 'topic' | 'mode'>> => {
-  const client = getAIClient();
-  if (!client) {
-    // Placeholder so UI loads without API key
-    return {
-      generatedTitle: 'Demo Report (API key not set)',
-      executiveSummary: 'Включён демо-режим. Добавьте API ключ, чтобы получить реальный анализ.',
-      marketOverview: '',
-      marketStats: [],
-      chartData: null,
-      keyTrends: '',
-      targetAudience: '',
-      competitorAnalysis: '',
-      competitorTable: null,
-      swotAnalysis: '',
-      businessIdeas: ''
-    };
-  }
   try {
     const prompt = mode === ResearchMode.Analyze 
         ? generateAnalyzeNichePrompt(topic, context)
         : generateExploreIdeasPrompt(topic);
     
-    const response = await client.models.generateContent({
+    const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt,
         config: {
@@ -556,9 +572,9 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
         },
     });
 
-    const parsedContent = parseMarketAnalysis((response as any).text);
+    const parsedContent = parseMarketAnalysis(response.text);
 
-    const rawSources = (response as any).candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+    const rawSources = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
     const sources: GroundingSource[] = rawSources
       .map((chunk: any) => ({
           uri: chunk.web?.uri ?? '',
@@ -569,49 +585,37 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
           index === self.findIndex((s) => s.uri === source.uri)
       );
 
-    return { ...parsedContent, sources } as any;
+    return { ...parsedContent, sources };
   } catch (error) {
     console.error("Error fetching market analysis from Gemini API:", error);
     throw new Error("Failed to generate market analysis. The AI model may be unavailable.");
   }
 };
 
+
 export const fetchBusinessPlan = async (marketContext: string, businessIdea: string): Promise<BusinessPlan> => {
-  const client = getAIClient();
-  if (!client) {
-    return {
-      missionStatement: 'Демо-режим: добавьте API ключ, чтобы получить план.',
-      valueProposition: '',
-      marketingStrategy: '',
-      kpis: '',
-      actionPlan: ''
-    };
-  }
   try {
     const prompt = generateBusinessPlanPrompt(marketContext, businessIdea);
-    const response = await (client as any).models.generateContent({
+    const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt,
     });
-    return parseBusinessPlan((response as any).text);
+    return parseBusinessPlan(response.text);
   } catch (error) {
     console.error("Error fetching business plan:", error);
     throw new Error("Failed to generate the business plan.");
   }
 };
 
+
 export const fetchFollowUp = async (
     question: string, 
     context: string, 
     chatHistory: ChatMessage[]
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
-    const client = getAIClient();
-    if (!client) {
-        return { text: 'Демо-режим: API ключ не задан. Укажите VITE_GEMINI_API_KEY и перезапустите билд.' };
-    }
     try {
         const prompt = generateFollowUpPrompt(question, context, chatHistory);
-        const response = await (client as any).models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
@@ -619,7 +623,7 @@ export const fetchFollowUp = async (
             },
         });
         
-        let text = (response as any).text ?? '';
+        let text = response.text ?? '';
 
         let cards: SolutionCard[] | undefined = undefined;
         let fileOperations: FileOperation[] | undefined = undefined;
@@ -634,6 +638,7 @@ export const fetchFollowUp = async (
         const clarificationEndTag = '[PROJECT_CLARIFICATION_END]';
         const teamStartTag = '[TEAM_SUGGESTIONS_START]';
         const teamEndTag = '[TEAM_SUGGESTIONS_END]';
+
 
         if (text.includes(cardStartTag) && text.includes(cardEndTag)) {
             const cardJsonRaw = text.split(cardStartTag)[1].split(cardEndTag)[0].trim();

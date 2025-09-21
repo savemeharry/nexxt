@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AttachedFile, Asset, Folder } from '../types';
 import { BoldIcon } from './icons/BoldIcon';
@@ -19,6 +17,10 @@ interface DocumentViewerProps {
     asset: Asset | null;
     onUpdateAsset: (updatedAsset: AttachedFile) => void;
     onSelectAsset: (asset: Asset) => void;
+    isSplitViewMode?: boolean;
+    animatedLines?: { text: string; state: string }[] | null;
+    onClearAnimatedLines?: () => void;
+    aiHasChanges?: boolean;
 }
 
 const dataUrlToBlob = (dataUrl: string): Blob | null => {
@@ -59,17 +61,6 @@ const uint8ArrayToBinaryString = (bytes: Uint8Array): string => {
     return binary;
 }
 
-const utf8_to_b64 = (str: string): string => {
-    try {
-        const encoder = new TextEncoder();
-        const uint8array = encoder.encode(str);
-        return btoa(uint8ArrayToBinaryString(uint8array));
-    } catch (e) {
-        console.error("Error in utf8_to_b64:", e);
-        return "";
-    }
-};
-
 const b64_to_utf8 = (str: string): string => {
     try {
         const binary_string = atob(str);
@@ -78,11 +69,22 @@ const b64_to_utf8 = (str: string): string => {
         for (let i = 0; i < len; i++) {
             bytes[i] = binary_string.charCodeAt(i);
         }
-        const decoder = new TextDecoder();
+        const decoder = new TextDecoder(); // Default is utf-8
         return decoder.decode(bytes);
     } catch (e) {
         console.error("Error in b64_to_utf8:", e);
         return "Error: Could not decode content.";
+    }
+};
+
+const utf8_to_b64 = (str: string): string => {
+    try {
+        const encoder = new TextEncoder();
+        const uint8array = encoder.encode(str);
+        return btoa(uint8ArrayToBinaryString(uint8array));
+    } catch (e) {
+        console.error("Error in utf8_to_b64:", e);
+        return "";
     }
 };
 
@@ -103,7 +105,15 @@ const blockTags: { [key: string]: string } = {
 };
 
 
-const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, onSelectAsset }) => {
+const DocumentViewer: React.FC<DocumentViewerProps> = ({ 
+    asset, 
+    onUpdateAsset, 
+    onSelectAsset, 
+    isSplitViewMode = false, 
+    animatedLines,
+    onClearAnimatedLines,
+    aiHasChanges,
+}) => {
     const [fileName, setFileName] = useState('');
     const [initialHtml, setInitialHtml] = useState('');
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -115,6 +125,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
     const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
     const editorRef = useRef<HTMLDivElement>(null);
     const toolbarRef = useRef<HTMLDivElement>(null);
+
+    const isAiEditing = !!animatedLines;
 
     const updateToolbarState = useCallback(() => {
         if (!editorRef.current) return;
@@ -161,13 +173,25 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
 
     useEffect(() => {
         const editor = editorRef.current;
-        if (!editor) return;
+        if (!editor || isAiEditing) return;
         const handleInteraction = () => requestAnimationFrame(updateToolbarState);
         document.addEventListener('selectionchange', handleInteraction);
         editor.addEventListener('click', handleInteraction);
         editor.addEventListener('keyup', handleInteraction);
         editor.addEventListener('focus', handleInteraction);
-        editor.addEventListener('input', handleInteraction);
+        
+        const handleInput = () => {
+             if (onClearAnimatedLines) onClearAnimatedLines();
+
+             if (isSplitViewMode) {
+                const currentHtml = editorRef.current?.innerHTML || '';
+                const newContent = `data:text/html;base64,${utf8_to_b64(currentHtml)}`;
+                onUpdateAsset({ ...(asset as AttachedFile), content: newContent });
+            }
+            updateToolbarState();
+        };
+
+        editor.addEventListener('input', handleInput);
 
 
         return () => {
@@ -175,13 +199,13 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
             editor.removeEventListener('click', handleInteraction);
             editor.removeEventListener('keyup', handleInteraction);
             editor.removeEventListener('focus', handleInteraction);
-            editor.removeEventListener('input', handleInteraction);
+            editor.removeEventListener('input', handleInput);
         };
-    }, [asset, updateToolbarState]);
+    }, [asset, updateToolbarState, isSplitViewMode, onUpdateAsset, isAiEditing, onClearAnimatedLines]);
 
     useEffect(() => {
         let objectUrl: string | undefined;
-        if (asset && asset.type === 'file') {
+        if (asset && asset.type === 'file' && !isAiEditing) {
             setFileName(asset.name);
             setPdfUrl(null);
             setDocxHtml(null);
@@ -228,29 +252,36 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
                     asset.mimeType.startsWith('text/') ||
                     [
                         'application/json', 'application/xml', 'application/sql',
+                        'text/markdown', 'application/x-markdown',
                     ].includes(asset.mimeType) ||
-                    asset.name.endsWith('.log') || asset.name.endsWith('.sql');
+                    asset.name.endsWith('.log') || asset.name.endsWith('.sql') || asset.name.endsWith('.md');
 
                 if (asset.content && isEditableText) {
                     const base64Content = asset.content.split(',')[1] || '';
                     const decodedContent = b64_to_utf8(base64Content);
                     let html = decodedContent;
                     
-                    if (asset.mimeType === 'text/markdown' || asset.mimeType === 'text/plain') {
+                    if (asset.mimeType.includes('markdown') || asset.name.endsWith('.md')) {
                        if (typeof marked !== 'undefined') {
                             html = marked.parse(decodedContent, { gfm: true, breaks: true });
                         }
+                    } else if (!asset.mimeType.includes('html')) { // for text/plain, etc.
+                         html = `<p>${decodedContent.replace(/\n/g, '</p><p>')}</p>`;
                     }
 
                     const sanitizedHtml = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
-                    editorRef.current.innerHTML = sanitizedHtml;
-                    setInitialHtml(sanitizedHtml);
+                    if (editorRef.current.innerHTML !== sanitizedHtml) {
+                        editorRef.current.innerHTML = sanitizedHtml;
+                    }
+                    if (!isSplitViewMode) {
+                        setInitialHtml(sanitizedHtml);
+                    }
                 } else {
                     editorRef.current.innerHTML = '';
                     setInitialHtml('');
                 }
             }
-        } else {
+        } else if (!asset) {
             setFileName('');
             setPdfUrl(null);
             setDocxHtml(null);
@@ -262,7 +293,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
         return () => {
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [asset, updateToolbarState]);
+    }, [asset, updateToolbarState, isSplitViewMode, isAiEditing]);
 
     if (!asset) {
         return (
@@ -340,7 +371,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
     const isChanged = isTextChanged || isNameChanged;
 
     const renderContent = () => {
-        if (!currentFile.content) {
+        if (!currentFile.content && !animatedLines) {
             return (
                 <div className="text-center p-4">
                     <h3 className="text-xl font-semibold text-neutral-700 dark:text-neutral-300">Content not available</h3>
@@ -348,6 +379,35 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
                 </div>
             );
         }
+        const getLineClass = (state: string) => {
+            switch (state) {
+                case 'added': return 'line-added';
+                case 'deleted': return 'line-deleted';
+                case 'modified': return 'line-modified';
+                default: return '';
+            }
+        };
+
+        if (animatedLines) {
+            return (
+                 <div className="p-4 h-full flex flex-col w-full">
+                     <div className="flex items-center gap-4 mb-2 shrink-0">
+                        <span className="flex-grow bg-transparent text-lg font-semibold text-neutral-900 dark:text-neutral-100">{fileName}</span>
+                        {isSplitViewMode && <button onClick={() => onUpdateAsset(currentFile)} disabled={!aiHasChanges} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
+                           Save Changes
+                        </button>}
+                    </div>
+                    <div
+                        className="wysiwyg-editor flex-grow w-full h-full overflow-y-auto p-4 bg-neutral-50 dark:bg-neutral-800/50 rockstar:bg-neutral-800/50 rounded-md border border-neutral-200 dark:border-neutral-700 rockstar:border-neutral-700"
+                    >
+                        {animatedLines.map((line, i) => (
+                           <div key={i} className={getLineClass(line.state)}>{line.text || ' '}</div>
+                        ))}
+                    </div>
+                 </div>
+            );
+        }
+
 
         const isDocx = currentFile.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || currentFile.name.endsWith('.docx');
         if (isDocx) {
@@ -393,8 +453,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
             currentFile.mimeType.startsWith('text/') ||
             [
                 'application/json', 'application/xml', 'application/sql',
+                'text/markdown', 'application/x-markdown',
             ].includes(currentFile.mimeType) ||
-            currentFile.name.endsWith('.log') || currentFile.name.endsWith('.sql');
+            currentFile.name.endsWith('.log') || currentFile.name.endsWith('.sql') || currentFile.name.endsWith('.md');
 
         if (isEditableText) {
             return (
@@ -405,37 +466,40 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
                             value={fileName}
                             onChange={(e) => setFileName(e.target.value)}
                             className="flex-grow bg-transparent text-lg font-semibold text-neutral-900 dark:text-neutral-100 focus:outline-none border-b-2 border-transparent focus:border-brand-500 rockstar:focus:border-rockstar-500"
+                            disabled={isAiEditing}
                         />
-                        <button onClick={handleSaveText} disabled={!isChanged} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
-                            Save
+                        <button onClick={handleSaveText} disabled={!(isChanged || aiHasChanges)} className="px-4 py-1.5 text-sm font-medium text-white bg-brand-600 rockstar:bg-rockstar-600 rounded-full hover:bg-brand-700 rockstar:hover:bg-rockstar-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed">
+                           {isSplitViewMode ? 'Save Changes' : 'Save'}
                         </button>
                     </div>
-                    <div ref={toolbarRef} className="flex items-center gap-2 mb-2 p-1 bg-neutral-100 dark:bg-neutral-900 rockstar:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rockstar:border-neutral-800 rounded-lg shrink-0">
-                        <div className="relative">
-                            <button onClick={() => setIsStyleDropdownOpen(!isStyleDropdownOpen)} className="flex items-center gap-2 px-3 py-1.5 text-sm rounded text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50">
-                                {blockType}
-                                <ChevronDownIcon className="w-4 h-4" />
-                            </button>
-                            {isStyleDropdownOpen && (
-                                <div className="absolute top-full left-0 mt-1 w-40 bg-neutral-50 dark:bg-neutral-800 rockstar:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rockstar:border-neutral-700 rounded-md shadow-lg z-10">
-                                    {Object.keys(blockTags).map(style => (
-                                        <button key={style} onClick={() => applyStyle(style)} className={`block w-full text-left px-3 py-1.5 text-sm ${blockType === style ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-800 dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}>
-                                            {style}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                    {!isAiEditing && (
+                        <div ref={toolbarRef} className="flex items-center gap-2 mb-2 p-1 bg-neutral-100 dark:bg-neutral-900 rockstar:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rockstar:border-neutral-800 rounded-lg shrink-0">
+                            <div className="relative">
+                                <button onClick={() => setIsStyleDropdownOpen(!isStyleDropdownOpen)} className="flex items-center gap-2 px-3 py-1.5 text-sm rounded text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50">
+                                    {blockType}
+                                    <ChevronDownIcon className="w-4 h-4" />
+                                </button>
+                                {isStyleDropdownOpen && (
+                                    <div className="absolute top-full left-0 mt-1 w-40 bg-neutral-50 dark:bg-neutral-800 rockstar:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rockstar:border-neutral-700 rounded-md shadow-lg z-10">
+                                        {Object.keys(blockTags).map(style => (
+                                            <button key={style} onClick={() => applyStyle(style)} className={`block w-full text-left px-3 py-1.5 text-sm ${blockType === style ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-800 dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}>
+                                                {style}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 mx-1"></div>
+                            <button onClick={() => applyInlineFormat('bold')} title="Bold" className={`p-2 rounded ${activeFormats.has('bold') ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><BoldIcon /></button>
+                            <button onClick={() => applyInlineFormat('italic')} title="Italic" className={`p-2 rounded ${activeFormats.has('italic') ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><ItalicIcon /></button>
+                            <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 mx-1"></div>
+                            <button onClick={toggleList} title="Bulleted List" className={`p-2 rounded ${activeFormats.has('list') ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><ListIcon /></button>
+                            <button onClick={toggleQuote} title="Blockquote" className={`p-2 rounded ${blockType === 'Quote' ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><QuoteIcon /></button>
                         </div>
-                        <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 mx-1"></div>
-                        <button onClick={() => applyInlineFormat('bold')} title="Bold" className={`p-2 rounded ${activeFormats.has('bold') ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><BoldIcon /></button>
-                        <button onClick={() => applyInlineFormat('italic')} title="Italic" className={`p-2 rounded ${activeFormats.has('italic') ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><ItalicIcon /></button>
-                        <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 mx-1"></div>
-                        <button onClick={toggleList} title="Bulleted List" className={`p-2 rounded ${activeFormats.has('list') ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><ListIcon /></button>
-                        <button onClick={toggleQuote} title="Blockquote" className={`p-2 rounded ${blockType === 'Quote' ? 'bg-brand-500 text-white rockstar:bg-rockstar-500' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700/50 rockstar:hover:bg-neutral-700/50'}`}><QuoteIcon /></button>
-                    </div>
+                    )}
                     <div
                         ref={editorRef}
-                        contentEditable="true"
+                        contentEditable={!isAiEditing}
                         className="wysiwyg-editor flex-grow w-full h-full overflow-y-auto p-4 bg-neutral-50 dark:bg-neutral-800/50 rockstar:bg-neutral-800/50 rounded-md border border-neutral-200 dark:border-neutral-700 rockstar:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-brand-500 rockstar:focus:ring-rockstar-500"
                     />
                 </div>
@@ -449,8 +513,12 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ asset, onUpdateAsset, o
         );
     };
 
+    const containerClasses = isSplitViewMode 
+        ? "bg-white dark:bg-neutral-900/60 rockstar:bg-black/40 rounded-xl h-full flex items-center justify-center overflow-auto"
+        : "bg-white dark:bg-neutral-900/60 rockstar:bg-black/40 border border-neutral-200 dark:border-neutral-800 rockstar:border-rockstar-800/60 rounded-r-xl h-full flex items-center justify-center overflow-auto";
+
     return (
-        <div className="bg-white dark:bg-neutral-900/60 rockstar:bg-black/40 border border-neutral-200 dark:border-neutral-800 rockstar:border-rockstar-800/60 rounded-r-xl h-full flex items-center justify-center overflow-auto">
+        <div className={containerClasses}>
             {renderContent()}
         </div>
     );

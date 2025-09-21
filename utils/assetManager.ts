@@ -1,11 +1,23 @@
 
 
+
 import { Asset, AttachedFile, Folder, FileOperation } from '../types';
+
+const uint8ArrayToBinaryString = (bytes: Uint8Array): string => {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return binary;
+}
 
 // Unicode-safe UTF-8 to Base64 encoding
 const utf8_to_b64 = (str: string): string => {
     try {
-        return btoa(unescape(encodeURIComponent(str)));
+        const encoder = new TextEncoder();
+        const uint8array = encoder.encode(str);
+        return btoa(uint8ArrayToBinaryString(uint8array));
     } catch (e) {
         console.error("Error in utf8_to_b64:", e);
         return "";
@@ -71,7 +83,7 @@ export class AssetManager {
             let folder = currentChildren.find(a => a.name === part && a.type === 'folder') as Folder | undefined;
             if (!folder) {
                 folder = {
-                    id: Date.now().toString() + Math.random(),
+                    id: `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`,
                     type: 'folder',
                     name: part,
                     children: [],
@@ -106,8 +118,10 @@ export class AssetManager {
 
     public execute(operations: FileOperation[]): { updatedAssets: Asset[], lastTouchedAsset: Asset | null } {
         let lastTouchedAsset: Asset | null = null;
+        const fileSystemOps = operations.filter(op => op.operation !== 'PATCH_FILE');
 
-        for (const op of operations) {
+
+        for (const op of fileSystemOps) {
             switch (op.operation) {
                 case 'CREATE_FILE': {
                     const { parentFolder, newAssets } = this.getOrCreateParentFolder(op.path);
@@ -116,7 +130,7 @@ export class AssetManager {
                     const targetContainer = parentFolder ? parentFolder.children : this.assets;
 
                     const newFile: AttachedFile = {
-                        id: Date.now().toString(),
+                        id: `file-${Date.now()}-${Math.random().toString(36).slice(2)}`,
                         type: 'file',
                         name: this.createUniqueName(targetContainer, fileName),
                         mimeType: 'text/markdown', // AI generates markdown
@@ -135,7 +149,7 @@ export class AssetManager {
                     
                      if (!targetContainer.some(a => a.name === folderName && a.type === 'folder')) {
                         const newFolder: Folder = {
-                            id: Date.now().toString(),
+                            id: `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`,
                             type: 'folder',
                             name: this.createUniqueName(targetContainer, folderName),
                             children: []

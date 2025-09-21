@@ -1,4 +1,6 @@
 
+
+
 import React, { useState } from 'react';
 import { Task, TaskStatus, TaskPriority, Subtask, Asset, AttachedFile, TaskAttachment, User } from '../types';
 import { CloseIcon } from './icons/CloseIcon';
@@ -46,7 +48,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onSave, initialData, pro
     const handleSave = () => {
         if (!title.trim()) return;
         const taskData: Task = {
-            id: initialData?.id || Date.now().toString(),
+            id: initialData?.id || `task-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             title,
             description,
             status,

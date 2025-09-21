@@ -151,6 +151,50 @@
       .rockstar #rockstar-bg {
         display: block; /* Shown only for rockstar theme */
       }
+
+      /* Highlight animation for updated files */
+      @keyframes pulse-once-light {
+        0%, 100% { background-color: transparent; }
+        50% { background-color: rgba(59, 130, 246, 0.2); } /* brand-500/20 */
+      }
+       @keyframes pulse-once-dark {
+        0%, 100% { background-color: transparent; }
+        50% { background-color: rgba(30, 64, 175, 0.3); } /* brand-800/30 */
+      }
+      .light .animate-pulse-once {
+        animation: pulse-once-light 1.5s ease-in-out;
+      }
+       .dark .animate-pulse-once, .rockstar .animate-pulse-once {
+        animation: pulse-once-dark 1.5s ease-in-out;
+      }
+
+      /* Live AI Edit Animations */
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .line-added, .line-modified, .line-deleted {
+        animation: fadeIn 0.5s ease-in-out;
+        transition: background-color 0.5s;
+        border-radius: 4px;
+        padding: 0 4px;
+        margin: 0 -4px;
+        display: block; /* Ensure it takes up the full line */
+      }
+      .line-deleted { 
+        text-decoration: line-through; 
+      }
+      
+      /* Light Theme Diff */
+      .light .line-added { background-color: #dcfce7; } /* green-100 (Soft Salad Green) */
+      .light .line-modified { background-color: #fef9c3; } /* yellow-100 (Soft Yellow) */
+      .light .line-deleted { background-color: #ffedd5; opacity: 0.7; } /* orange-100 (Soft Orange) */
+
+      /* Dark & Rockstar Theme Diff */
+      .dark .line-added, .rockstar .line-added { background-color: rgba(74, 222, 128, 0.15); } /* green-400 with alpha */
+      .dark .line-modified, .rockstar .line-modified { background-color: rgba(250, 204, 21, 0.15); } /* yellow-400 with alpha */
+      .dark .line-deleted, .rockstar .line-deleted { background-color: rgba(251, 146, 60, 0.2); opacity: 0.6; } /* orange-400 with alpha */
+
     </style>
     <script>
       tailwind.config = {

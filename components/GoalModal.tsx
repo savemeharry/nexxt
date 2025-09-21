@@ -1,5 +1,6 @@
 
 
+
 import React, { useState } from 'react';
 import { Goal } from '../types';
 import { CloseIcon } from './icons/CloseIcon';
@@ -18,7 +19,7 @@ const GoalModal: React.FC<GoalModalProps> = ({ onClose, onSave, initialData }) =
     const handleSave = () => {
         if (!title.trim()) return;
         const goalData: Goal = {
-            id: initialData?.id || Date.now().toString(),
+            id: initialData?.id || `goal-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             title,
             description,
             tasks: initialData?.tasks || [],

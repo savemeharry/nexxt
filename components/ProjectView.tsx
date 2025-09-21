@@ -1,8 +1,3 @@
-
-
-
-
-
 import React, { useState, useRef, useEffect } from 'react';
 import { CompanyCardData, AttachedFile, Asset, Folder, Task, Goal, User } from '../types';
 import FileExplorer from './FileExplorer';
@@ -33,6 +28,8 @@ interface ProjectViewProps {
     onSaveToDrive: (project: CompanyCardData) => void;
     isGoogleSignedIn: boolean;
     initialSelectedAsset?: Asset | null;
+    highlightedAssetId: string | null;
+    onHighlightConsumed: () => void;
 }
 
 const readFileAsBase64 = (file: File): Promise<Omit<AttachedFile, 'id'>> => {
@@ -69,7 +66,7 @@ const getUniqueName = (assets: Asset[], baseName: string, isFolder: boolean): st
     return newName;
 };
 
-const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProject, onBack, onSaveToDrive, isGoogleSignedIn, initialSelectedAsset }) => {
+const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProject, onBack, onSaveToDrive, isGoogleSignedIn, initialSelectedAsset, highlightedAssetId, onHighlightConsumed }) => {
     const [activeView, setActiveView] = useState<ActiveProjectView>('files');
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(initialSelectedAsset || project.assets[0] || null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,7 +124,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
 
     const handleCreateDocument = () => {
         const newDoc: AttachedFile = {
-            id: Date.now().toString(),
+            id: `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             type: 'file',
             name: getUniqueName(project.assets, 'Untitled Document.txt', false),
             mimeType: 'text/plain',
@@ -140,7 +137,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
 
     const handleCreateFolder = () => {
         const newFolder: Folder = {
-            id: Date.now().toString(),
+            id: `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             type: 'folder',
             name: getUniqueName(project.assets, 'New Folder', true),
             children: [],
@@ -364,6 +361,8 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
                                     onSelectAsset={setSelectedAsset}
                                     onRenameAsset={handleRenameAsset}
                                     onMoveAsset={handleMoveAsset}
+                                    highlightedAssetId={highlightedAssetId}
+                                    onHighlightConsumed={onHighlightConsumed}
                                 />
                             ) : (
                                 <GoalsList
@@ -382,7 +381,6 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
                         <DocumentViewer 
                             asset={selectedAsset}
                             onUpdateAsset={handleUpdateAsset}
-                            // FIX: Pass the 'setSelectedAsset' state setter to the 'DocumentViewer' component.
                             onSelectAsset={setSelectedAsset}
                         />
                     ) : (

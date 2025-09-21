@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Asset } from '../types';
 import { EditIcon } from './icons/EditIcon';
@@ -12,6 +10,8 @@ interface FileExplorerProps {
     onSelectAsset: (asset: Asset) => void;
     onRenameAsset: (assetId: string, newName: string) => void;
     onMoveAsset: (draggedId: string, targetFolderId: string | null) => void;
+    highlightedAssetId: string | null;
+    onHighlightConsumed: () => void;
 }
 
 const AssetItem: React.FC<{ 
@@ -21,12 +21,27 @@ const AssetItem: React.FC<{
     onSelectAsset: (asset: Asset) => void;
     onRenameAsset: (assetId: string, newName: string) => void;
     onMoveAsset: (draggedId: string, targetFolderId: string | null) => void;
-}> = ({ asset, level, selectedAsset, onSelectAsset, onRenameAsset, onMoveAsset }) => {
+    highlightedAssetId: string | null;
+    onHighlightConsumed: () => void;
+}> = ({ asset, level, selectedAsset, onSelectAsset, onRenameAsset, onMoveAsset, highlightedAssetId, onHighlightConsumed }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const [isRenaming, setIsRenaming] = useState(false);
     const [name, setName] = useState(asset.name);
     const [isDragOver, setIsDragOver] = useState(false);
     const renameInputRef = useRef<HTMLInputElement>(null);
+    const itemRef = useRef<HTMLLIElement>(null);
+    const isHighlighted = highlightedAssetId === asset.id;
+
+    useEffect(() => {
+        if (isHighlighted && itemRef.current) {
+            const animationDuration = 1500;
+            itemRef.current.querySelector('div')?.classList.add('animate-pulse-once');
+            setTimeout(() => {
+                itemRef.current?.querySelector('div')?.classList.remove('animate-pulse-once');
+                onHighlightConsumed();
+            }, animationDuration);
+        }
+    }, [isHighlighted, onHighlightConsumed]);
 
     useEffect(() => {
         if (isRenaming && renameInputRef.current) {
@@ -76,7 +91,7 @@ const AssetItem: React.FC<{
     const isSelected = selectedAsset?.id === asset.id;
 
     return (
-        <li>
+        <li ref={itemRef}>
             <div
                 onClick={() => onSelectAsset(asset)}
                 onDragOver={handleDragOver}
@@ -132,6 +147,8 @@ const AssetItem: React.FC<{
                             onSelectAsset={onSelectAsset}
                             onRenameAsset={onRenameAsset}
                             onMoveAsset={onMoveAsset}
+                            highlightedAssetId={highlightedAssetId}
+                            onHighlightConsumed={onHighlightConsumed}
                         />
                     ))}
                 </ul>
@@ -140,7 +157,7 @@ const AssetItem: React.FC<{
     );
 };
 
-const FileExplorer: React.FC<FileExplorerProps> = ({ assets, selectedAsset, onSelectAsset, onRenameAsset, onMoveAsset }) => {
+const FileExplorer: React.FC<FileExplorerProps> = ({ assets, selectedAsset, onSelectAsset, onRenameAsset, onMoveAsset, highlightedAssetId, onHighlightConsumed }) => {
     return (
         <div className="flex-grow overflow-y-auto p-2">
             {assets.length === 0 ? (
@@ -156,6 +173,8 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ assets, selectedAsset, onSe
                             onSelectAsset={onSelectAsset}
                             onRenameAsset={onRenameAsset}
                             onMoveAsset={onMoveAsset}
+                            highlightedAssetId={highlightedAssetId}
+                            onHighlightConsumed={onHighlightConsumed}
                         />
                     ))}
                 </ul>

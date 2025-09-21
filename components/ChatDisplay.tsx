@@ -1,6 +1,7 @@
 
+
 import React, { useEffect, useRef } from 'react';
-import { ChatMessage } from '../types';
+import { ChatMessage, PatchFileOperation } from '../types';
 import { FormattedText } from './FormattedText';
 import { SolutionCardDisplay } from './SolutionCardDisplay';
 import { FileBadgeIcon } from './icons/FileBadgeIcon';
@@ -103,6 +104,11 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({ messages, isLoading, onSelect
                                 <pre className="text-xs text-neutral-300 whitespace-pre-wrap break-all">
                                     <code>
                                         {msg.content.executedOperations.map((op, i) => {
+                                            if (op.operation === 'PATCH_FILE') {
+                                                const patchOp = op as PatchFileOperation;
+                                                const changeCount = patchOp.patches.length;
+                                                return <div key={i}>{`PATCH_FILE: Applied ${changeCount} change${changeCount !== 1 ? 's' : ''} to "${patchOp.path}"`}</div>;
+                                            }
                                             let opString = `${op.operation}: `;
                                             if ('path' in op) opString += `"${op.path}"`;
                                             if ('sourcePath' in op) opString += `"${op.sourcePath}" -> "${op.destinationPath}"`;
