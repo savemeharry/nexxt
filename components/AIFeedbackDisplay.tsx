@@ -58,14 +58,8 @@ const AIFeedbackDisplay: React.FC<AIFeedbackDisplayProps> = ({
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {foundSources.map((source, index) => {
-                            // Cycle through project card colors: yellow, green, blue, purple
-                            const colors = [
-                                'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700',
-                                'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700',
-                                'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700',
-                                'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-700'
-                            ];
-                            const colorClass = colors[index % colors.length];
+                            // Neutral gray styling for all sources
+                            const colorClass = 'bg-neutral-700 dark:bg-neutral-800 text-neutral-300 dark:text-neutral-400 border-neutral-600 dark:border-neutral-700';
                             
                             return (
                                 <div

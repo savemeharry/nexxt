@@ -576,12 +576,6 @@ const App: React.FC = () => {
       if (options.webSearch) {
           setLiveSearchQueries([]);
           setLiveFoundSources([]);
-          
-          // Simulate live search queries appearing
-          setTimeout(() => setLiveSearchQueries([message]), 500);
-          setTimeout(() => setLiveFoundSources(['google.com', 'wikipedia.org']), 1000);
-          setTimeout(() => setLiveFoundSources(prev => [...prev, 'stackoverflow.com', 'github.com']), 1500);
-          setTimeout(() => setLiveFoundSources(prev => [...prev, 'medium.com']), 2000);
       }
       
       let focusedFiles: AttachedFile[] = [];
@@ -737,7 +731,15 @@ const App: React.FC = () => {
           
           const contextString = JSON.stringify(context);
 
-          const response = await fetchFollowUp(message, contextString, currentChatHistory);
+          const response = await fetchFollowUp(
+              message, 
+              contextString, 
+              currentChatHistory,
+              options.webSearch ? (queries: string[], sources: string[]) => {
+                  setLiveSearchQueries(queries);
+                  setLiveFoundSources(sources);
+              } : undefined
+          );
           const finalChatMessages = [...currentChatHistory];
           
           const modelMessage: ChatMessage = { 

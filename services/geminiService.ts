@@ -285,6 +285,69 @@ const generateWithBackoff = async ({ modelCandidates, contents, config }: Genera
     throw lastError;
 };
 
+// Streaming version for real-time grounding sources
+const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: GenerateParams, onSearchUpdate?: (queries: string[], sources: string[]) => void) => {
+    let lastError: any = null;
+    for (const model of modelCandidates) {
+        for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+                if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
+                
+                const stream = ai.models.generateContentStream({ model, contents, config });
+                let fullText = '';
+                let groundingSources: string[] = [];
+                
+                for await (const chunk of stream) {
+                    if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
+                    
+                    // Accumulate text
+                    if (chunk.text) {
+                        fullText += chunk.text;
+                    }
+                    
+                    // Extract grounding sources in real-time
+                    if (chunk.groundingMetadata?.groundingChunks) {
+                        const newSources = chunk.groundingMetadata.groundingChunks
+                            .map((chunk: any) => chunk.web?.uri ? new URL(chunk.web.uri).hostname.replace(/^www\./, '') : '')
+                            .filter(Boolean);
+                        
+                        groundingSources = [...new Set([...groundingSources, ...newSources])];
+                        
+                        // Call callback with real-time updates
+                        if (onSearchUpdate && newSources.length > 0) {
+                            onSearchUpdate([], groundingSources);
+                        }
+                    }
+                }
+                
+                // Return final response with accumulated data
+                return {
+                    text: fullText,
+                    groundingMetadata: { groundingChunks: groundingSources.map(source => ({ web: { uri: `https://${source}` } })) }
+                };
+                
+            } catch (err: any) {
+                lastError = err;
+                const code = err?.error?.code || err?.status;
+                const status = err?.error?.status;
+                if (err && (err.message === 'ABORTED' || err.message === 'TIMEOUT')) {
+                    throw err;
+                }
+                if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
+                    const base = parseRetryMs(err) ?? 15000;
+                    const jitter = Math.floor(Math.random() * 5000);
+                    const backoff = Math.min(base * Math.pow(2, attempt) + jitter, 60000);
+                    cooldownUntilMs = Date.now() + backoff;
+                    await sleepWithAbort(backoff, activeAbortController?.signal);
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+    throw lastError;
+};
+
 const generateFollowUpPrompt = (question: string, context: string, chatHistory: ChatMessage[]): string => {
     const historyString = chatHistory
         .map(m => `${m.role}: ${m.content.text}`)
@@ -759,7 +822,8 @@ export const fetchBusinessPlan = async (marketContext: string, businessIdea: str
 export const fetchFollowUp = async (
     question: string, 
     context: string, 
-    chatHistory: ChatMessage[]
+    chatHistory: ChatMessage[],
+    onSearchUpdate?: (queries: string[], sources: string[]) => void
 ): Promise<{ text: string; cards?: SolutionCard[], fileOperations?: FileOperation[], projectClarification?: {id: string, title: string}[], teamMemberSuggestions?: TeamMemberSuggestion[] }> => {
     try {
         newRun();
@@ -784,11 +848,19 @@ export const fetchFollowUp = async (
         })();
 
         const prompt = generateFollowUpPrompt(question, preparedContext, chatHistory);
-        const response = await generateWithBackoff({
-            modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
-            contents: prompt,
-            config: { tools: [{ googleSearch: {} }] }
-        });
+        
+        // Use streaming if web search callback is provided
+        const response = onSearchUpdate ? 
+            await generateStreamWithBackoff({
+                modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
+                contents: prompt,
+                config: { tools: [{ googleSearch: {} }] }
+            }, onSearchUpdate) :
+            await generateWithBackoff({
+                modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
+                contents: prompt,
+                config: { tools: [{ googleSearch: {} }] }
+            });
         
         let text = response.text ?? '';
 
