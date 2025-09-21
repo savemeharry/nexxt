@@ -395,17 +395,25 @@ const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: 
 
 // Smart fake streaming: get real sources first, then stream them realistically
 const generateWithSmartStreaming = async ({ modelCandidates, contents, config }: GenerateParams, onSearchUpdate: (queries: string[], sources: string[]) => void) => {
+    console.log('🚀 Starting smart streaming for:', contents);
+    
     // Step 1: Quick preliminary request to get real sources
     const quickPrompt = `Based on this query, what web sources would be most relevant to search? Just give me a brief answer: ${contents}`;
     
     let realSources: string[] = [];
     
     try {
+        console.log('📡 Making preliminary request for sources...');
         // Get real sources from Gemini
         const sourceResponse = await generateWithBackoff({
             modelCandidates,
             contents: quickPrompt,
             config
+        });
+        
+        console.log('📊 Source response received:', {
+            hasGrounding: !!sourceResponse.groundingMetadata,
+            chunksCount: sourceResponse.groundingMetadata?.groundingChunks?.length || 0
         });
         
         // Extract sources from grounding metadata
@@ -424,8 +432,10 @@ const generateWithSmartStreaming = async ({ modelCandidates, contents, config }:
                 })
                 .filter(Boolean);
         }
+        
+        console.log('🔍 Extracted real sources:', realSources);
     } catch (error) {
-        console.warn('Could not get preliminary sources, using fallback');
+        console.warn('⚠️ Could not get preliminary sources, using fallback:', error);
         // Fallback to common sources based on query content
         const query = contents.toLowerCase();
         if (query.includes('код') || query.includes('программ')) {
@@ -435,29 +445,39 @@ const generateWithSmartStreaming = async ({ modelCandidates, contents, config }:
         } else {
             realSources = ['wikipedia.org', 'google.com', 'medium.com'];
         }
+        console.log('📋 Using fallback sources:', realSources);
     }
     
     // Step 2: Start realistic fake streaming with real sources
     const streamSources = async () => {
+        console.log('🎬 Starting to stream sources:', realSources);
         const delays = [800, 1200, 1800, 2400, 3200]; // Realistic delays
         let streamedSources: string[] = [];
         
         for (let i = 0; i < Math.min(realSources.length, 5); i++) {
+            console.log(`⏳ Waiting ${delays[i] || 1000}ms before showing source ${i + 1}`);
             await new Promise(resolve => setTimeout(resolve, delays[i] || 1000));
             
-            if (activeAbortController?.signal.aborted) break;
+            if (activeAbortController?.signal.aborted) {
+                console.log('🛑 Streaming aborted');
+                break;
+            }
             
             streamedSources.push(realSources[i]);
+            console.log('📤 Streaming source:', realSources[i], 'Total streamed:', streamedSources);
             onSearchUpdate([], [...streamedSources]);
         }
+        console.log('✅ Finished streaming all sources');
     };
     
     // Step 3: Start streaming sources and main request in parallel
+    console.log('🔄 Starting parallel execution: streaming + main request');
     const [_, mainResponse] = await Promise.all([
         streamSources(),
         generateWithBackoff({ modelCandidates, contents, config })
     ]);
     
+    console.log('🎯 Smart streaming completed, returning response');
     return mainResponse;
 };
 

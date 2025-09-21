@@ -736,6 +736,7 @@ const App: React.FC = () => {
               contextString, 
               currentChatHistory,
               options.webSearch ? (queries: string[], sources: string[]) => {
+                  console.log('🔄 App.tsx: Received search update:', { queries, sources });
                   setLiveSearchQueries(queries);
                   setLiveFoundSources(sources);
               } : undefined
