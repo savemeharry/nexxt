@@ -6,8 +6,9 @@ declare let gapi: any;
 // Vite uses import.meta.env and requires VITE_ prefix for exposure to client
 const API_KEY = (import.meta as any).env?.VITE_GOOGLE_API_KEY;
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
-// Request Drive file scope + user profile/email to fetch avatar/name
+// Request Drive scopes (read existing + create) and profile/email for avatar/name
 const SCOPES = [
+  'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email'
@@ -224,13 +225,17 @@ export const uploadProject = async (project: CompanyCardData): Promise<void> => 
     const summaryForm = new FormData();
     summaryForm.append('metadata', new Blob([JSON.stringify(summaryFileMetadata)], { type: 'application/json' }));
     summaryForm.append('file', new Blob([summaryContent], { type: 'text/markdown'}));
-    await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    const sumRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${gapi.client.getToken().access_token}`,
             },
             body: summaryForm,
     });
+    if (!sumRes.ok) {
+        const err = await sumRes.text();
+        throw new Error(`Failed to upload summary: ${err}`);
+    }
 
 
     for (const asset of project.assets) {
@@ -240,12 +245,17 @@ export const uploadProject = async (project: CompanyCardData): Promise<void> => 
 
 // -------- Import (Download) from Google Drive ---------
 
-export const listTextFiles = async (pageSize: number = 20) => {
+export const listTextFiles = async (pageSize: number = 50) => {
     if (!gapi.client.getToken()) throw new Error("Please sign in to Google first.");
     const query = [
         "trashed=false",
-        "(mimeType contains 'text/' or mimeType='application/json' or mimeType='application/x-markdown' or mimeType='text/markdown' or mimeType='application/xml' or mimeType='text/csv')"
-    ].join(' and ');
+        "(mimeType contains 'text/' or ",
+        " mimeType='application/json' or mimeType='application/x-markdown' or mimeType='text/markdown' or mimeType='application/xml' or mimeType='text/csv' or ",
+        // Google Docs/Sheets/Slides
+        " mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.google-apps.presentation' or ",
+        // Common binaries
+        " mimeType='application/pdf' or mimeType contains 'image/' )"
+    ].join('');
     const res = await gapi.client.drive.files.list({ q: query, pageSize, fields: 'files(id,name,mimeType,size)' });
     return res.result.files || [];
 };
@@ -255,16 +265,40 @@ export const downloadFile = async (fileId: string): Promise<{ name: string; mime
     const metaRes = await gapi.client.drive.files.get({ fileId, fields: 'id,name,mimeType,size' });
     const { name, mimeType, size } = metaRes.result as { name: string; mimeType: string; size: number };
     const token = gapi.client.getToken().access_token;
-    const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!contentRes.ok) {
-        const err = await contentRes.text();
-        throw new Error(`Failed to download file: ${err}`);
+    let finalMime = mimeType;
+    let base64 = '';
+    // Google Docs export handling
+    if (mimeType === 'application/vnd.google-apps.document') {
+        const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!exportRes.ok) throw new Error(`Failed to export Google Doc: ${await exportRes.text()}`);
+        const text = await exportRes.text();
+        base64 = btoa(unescape(encodeURIComponent(text)));
+        finalMime = 'text/plain';
+        return { name: name.endsWith('.txt') ? name : `${name}.txt`, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: text.length };
     }
-    const text = await contentRes.text();
-    // Encode into data URL (text-based only)
-    const base64 = btoa(unescape(encodeURIComponent(text)));
-    const dataUrl = `data:${mimeType || 'text/plain'};base64,${base64}`;
-    return { name, mimeType: mimeType || 'text/plain', content: dataUrl, size: Number(size) || text.length };
+    if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!exportRes.ok) throw new Error(`Failed to export Google Sheet: ${await exportRes.text()}`);
+        const text = await exportRes.text();
+        base64 = btoa(unescape(encodeURIComponent(text)));
+        finalMime = 'text/csv';
+        return { name: name.endsWith('.csv') ? name : `${name}.csv`, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: text.length };
+    }
+    if (mimeType === 'application/vnd.google-apps.presentation') {
+        const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!exportRes.ok) throw new Error(`Failed to export Google Slides: ${await exportRes.text()}`);
+        const text = await exportRes.text();
+        base64 = btoa(unescape(encodeURIComponent(text)));
+        finalMime = 'text/plain';
+        return { name: name.endsWith('.txt') ? name : `${name}.txt`, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: text.length };
+    }
+    // Other files (binary/text)
+    const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!contentRes.ok) throw new Error(`Failed to download file: ${await contentRes.text()}`);
+    const buf = await contentRes.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    base64 = btoa(binary);
+    return { name, mimeType: finalMime, content: `data:${finalMime};base64,${base64}`, size: Number(size) || bytes.length };
 };
