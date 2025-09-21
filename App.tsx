@@ -587,6 +587,18 @@ const App: React.FC = () => {
         focusedFiles = findAssetsByIds(currentProject.assets, attachedFileIds);
       }
 
+      const findPathById = (assets: Asset[], id: string, prefix: string = ''): string | null => {
+        for (const a of assets) {
+          const currentPath = prefix ? `${prefix}/${a.name}` : a.name;
+          if (a.id === id) return currentPath;
+          if (a.type === 'folder') {
+            const child = findPathById(a.children, id, currentPath);
+            if (child) return child;
+          }
+        }
+        return null;
+      };
+
       const messagesToAdd: ChatMessage[] = [];
       
       if (!options.isContinuation) {
@@ -680,7 +692,9 @@ const App: React.FC = () => {
                     if (inSplitView) {
                         const fileForContext = isInitiatingSplitView ? initiatingFile : splitViewAsset;
                         if (fileForContext) {
-                            projectContext.focusedFiles = [{ ...fileForContext, content: options.fileContentOverride || fileForContext.content }];
+                            const filePath = findPathById(projectForContext.assets as Asset[], fileForContext.id) || fileForContext.name;
+                            projectContext.focusedFiles = [{ ...fileForContext, content: options.fileContentOverride || fileForContext.content, path: filePath } as any];
+                            projectContext.focusedFilePath = filePath;
                         }
                     } else if (filesForContext.length > 0) {
                         projectContext.focusedFiles = filesForContext;
@@ -809,7 +823,12 @@ const App: React.FC = () => {
                     }
                     const nonPatchOps = response.fileOperations.filter(op => op.operation !== 'PATCH_FILE');
                     if (nonPatchOps.length > 0) {
-                        const updatedProjectData = applyGoalTaskOperations(currentProject, nonPatchOps);
+                        // First apply file system operations to assets, then goal/task ops
+                        let updatedProjectData = { ...currentProject };
+                        const assetManager = new AssetManager(updatedProjectData.assets);
+                        const { updatedAssets } = assetManager.execute(nonPatchOps);
+                        updatedProjectData.assets = updatedAssets;
+                        updatedProjectData = applyGoalTaskOperations(updatedProjectData, nonPatchOps);
                         handleUpdateCompany(updatedProjectData);
                     }
                 } else {

@@ -393,10 +393,9 @@ ${fileContent}
                 }
             }).join('\n\n');
 
+            const focusedPath = (parsedContext as any).focusedFilePath ? ` at path "${(parsedContext as any).focusedFilePath}"` : '';
             focusedFileContext = `
-**CRITICAL CONTEXT**: The user has attached ${files.length} file(s) to their question: ${files.map(f => `"${f.name}"`).join(', ')}.
-Your primary task is to answer the user's question based on the content of these specific files.
-All other context is secondary.
+**CRITICAL CONTEXT**: The user is editing the file${focusedPath}. Apply changes directly to this file using PATCH_FILE. Do NOT create copies.
 
 ${fileContents}
 `;
