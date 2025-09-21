@@ -237,12 +237,15 @@ type GenerateParams = { modelCandidates: string[]; contents: any; config?: any }
 // Simple client-side rate limiter to mitigate 429s when users trigger many actions
 let lastRequestTime = 0;
 const MIN_INTERVAL_MS = 1500; // enforce at least 1.5s between calls in this tab
+let cooldownUntilMs = 0; // global cooldown after 429
 
 const withRateLimit = async <T>(fn: () => Promise<T>): Promise<T> => {
     const now = Date.now();
     const waitMs = Math.max(0, lastRequestTime + MIN_INTERVAL_MS - now);
-    if (waitMs > 0) {
-        await sleepWithAbort(waitMs, activeAbortController?.signal);
+    const cdMs = Math.max(0, cooldownUntilMs - now);
+    const totalWait = Math.max(waitMs, cdMs);
+    if (totalWait > 0) {
+        await sleepWithAbort(totalWait, activeAbortController?.signal);
     }
     try {
         const result = await fn();
@@ -271,6 +274,7 @@ const generateWithBackoff = async ({ modelCandidates, contents, config }: Genera
                     const base = parseRetryMs(err) ?? 15000;
                     const jitter = Math.floor(Math.random() * 5000);
                     const backoff = Math.min(base * Math.pow(2, attempt) + jitter, 60000);
+                    cooldownUntilMs = Date.now() + backoff;
                     await sleepWithAbort(backoff, activeAbortController?.signal);
                     continue;
                 }
@@ -682,9 +686,7 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
     const response = await generateWithBackoff({
         modelCandidates: ["gemini-1.5-flash", "gemini-2.5-flash"],
         contents: prompt,
-        config: {
-            ...(mode === ResearchMode.Analyze && { tools: [{googleSearch: {}}] }),
-        },
+        config: {}
     });
 
     const parsedContent = parseMarketAnalysis(response.text);
@@ -755,9 +757,7 @@ export const fetchFollowUp = async (
         const response = await generateWithBackoff({
             modelCandidates: ["gemini-1.5-flash", "gemini-2.5-flash"],
             contents: prompt,
-            config: {
-                tools: [{googleSearch: {}}]
-            },
+            config: {}
         });
         
         let text = response.text ?? '';
