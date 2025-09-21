@@ -524,6 +524,11 @@ ${focusedFileContext}
 
 ${repetitionInstruction}${operationOverrideInstruction}
 
+**External Sources Policy (Very Important):**
+1. Use the googleSearch tool whenever you provide external references or statistics. Prefer official/org sites and fresh pages.
+2. Do NOT invent URLs. If unsure about a link, omit it.
+3. Prefer links that appear in your grounding citations (groundingMetadata). Base your Solution Cards on those.
+
 **Response Formatting Rules:**
 *   **IMPORTANT**: Respond in the same language as the user's question: "${question}".
 *   Provide your concise text answer first.
@@ -791,6 +796,15 @@ export const fetchFollowUp = async (
         let fileOperations: FileOperation[] | undefined = undefined;
         let projectClarification: {id: string, title: string}[] | undefined = undefined;
         let teamMemberSuggestions: TeamMemberSuggestion[] | undefined = undefined;
+        // Grounded links from search citations
+        const rawSources = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+        const groundedCards: SolutionCard[] = rawSources
+          .map((chunk: any) => ({
+              title: chunk.web?.title || (chunk.web?.uri ? new URL(chunk.web.uri).hostname.replace(/^www\./,'') : 'Source'),
+              description: '',
+              link: chunk.web?.uri || ''
+          }))
+          .filter(c => !!c.link);
         
         const cardStartTag = '[SOLUTION_CARDS_START]';
         const cardEndTag = '[SOLUTION_CARDS_END]';
@@ -811,6 +825,18 @@ export const fetchFollowUp = async (
                 console.error("Failed to parse Solution Cards JSON:", e, "Raw data:", cardJsonRaw);
                 text = text.split(cardStartTag)[0].trim() + "\n\n(I found some solutions, but had trouble formatting them.)";
             }
+        }
+
+        // Merge grounded cards with model cards, filter duplicates by link
+        if (groundedCards.length > 0) {
+            const existing = new Set((cards || []).map(c => c.link?.trim()).filter(Boolean));
+            const merged = [...(cards || []), ...groundedCards.filter(c => !existing.has(c.link?.trim()))];
+            // Compact descriptions
+            cards = merged.map(c => ({
+                ...c,
+                title: c.title?.slice(0, 60) || (c.link ? new URL(c.link).hostname.replace(/^www\./,'') : 'Link'),
+                description: c.description ? c.description.slice(0, 80) : ''
+            }));
         }
 
         if (text.includes(fileOpStartTag) && text.includes(fileOpEndTag)) {
