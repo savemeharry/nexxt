@@ -293,18 +293,29 @@ const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: 
             try {
                 if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
                 
-                const streamResponse = await ai.models.generateContentStream({ model, contents, config });
+                // Use the correct streaming API method
+                const stream = await withRateLimit(() => withTimeout(
+                    ai.models.generateContentStream({ model, contents, config }), 
+                    REQUEST_TIMEOUT_MS, 
+                    activeAbortController?.signal
+                ));
+                
                 let fullText = '';
                 let groundingSources: string[] = [];
                 
                 // Debug logging
-                console.log('Stream response type:', typeof streamResponse, streamResponse);
-                
-                // Check if streamResponse has the stream method or is directly iterable
-                const stream = streamResponse.stream || streamResponse;
+                console.log('Stream response:', stream);
                 
                 for await (const chunk of stream) {
                     if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
+                    
+                    // Debug logging for each chunk
+                    console.log('Received chunk:', {
+                        hasText: !!chunk.text,
+                        textLength: chunk.text?.length || 0,
+                        hasGrounding: !!chunk.groundingMetadata,
+                        groundingChunks: chunk.groundingMetadata?.groundingChunks?.length || 0
+                    });
                     
                     // Accumulate text
                     if (chunk.text) {
@@ -314,14 +325,28 @@ const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: 
                     // Extract grounding sources in real-time
                     if (chunk.groundingMetadata?.groundingChunks) {
                         const newSources = chunk.groundingMetadata.groundingChunks
-                            .map((chunk: any) => chunk.web?.uri ? new URL(chunk.web.uri).hostname.replace(/^www\./, '') : '')
+                            .map((groudingChunk: any) => {
+                                const uri = groudingChunk.web?.uri;
+                                if (uri) {
+                                    try {
+                                        return new URL(uri).hostname.replace(/^www\./, '');
+                                    } catch (e) {
+                                        console.warn('Invalid URI:', uri);
+                                        return null;
+                                    }
+                                }
+                                return null;
+                            })
                             .filter(Boolean);
                         
-                        groundingSources = [...new Set([...groundingSources, ...newSources])];
-                        
-                        // Call callback with real-time updates
-                        if (onSearchUpdate && newSources.length > 0) {
-                            onSearchUpdate([], groundingSources);
+                        if (newSources.length > 0) {
+                            groundingSources = [...new Set([...groundingSources, ...newSources])];
+                            console.log('New grounding sources found:', newSources, 'Total:', groundingSources);
+                            
+                            // Call callback with real-time updates
+                            if (onSearchUpdate) {
+                                onSearchUpdate([], groundingSources);
+                            }
                         }
                     }
                 }
