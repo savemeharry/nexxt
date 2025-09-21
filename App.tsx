@@ -658,7 +658,19 @@ const App: React.FC = () => {
           if (options.contextOverride) {
               context = options.contextOverride;
           } else if (activeView === 'RESEARCH') {
-             // ... research context logic
+             // Research view context: pass the current report (and plan if available)
+             if (stage === 'RESEARCH' && marketAnalysis) {
+                 // Provide the market analysis report directly so the AI can reference it
+                 context = { ...marketAnalysis } as any;
+             } else if (stage === 'PLANNING' && businessPlan && marketAnalysis) {
+                 // Provide both the report and resulting plan
+                 context = { ...marketAnalysis, businessPlan } as any;
+             } else if (researchContextProject) {
+                 // Fallback to contextual research marker (no report yet)
+                 context = { view: 'CONTEXT_RESEARCH', project: researchContextProject } as any;
+             } else {
+                 context = { view: 'RESEARCH' } as any;
+             }
           } else if (activeView === 'WORK') {
                 if (currentProject) {
                     const projectForContext = { ...currentProject, assets: stripContentFromAssets(currentProject.assets) };

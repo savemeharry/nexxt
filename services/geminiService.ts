@@ -344,13 +344,19 @@ I can do that. Which project should this be in?
              const project = parsedContext.project as CompanyCardData;
             reportTypeContext = `The user is performing contextual research on their project: "${project.title}". The focus is on market analysis, not file or task management.`;
             operationOverrideInstruction = `\n**CRITICAL RULE**: The user is in the "Research" view. You MUST NOT use the [FILE_OPERATIONS_START] tag or attempt any file, goal, or task operations. If the user asks to modify something, guide them to the 'Work' tab to find their project first.`;
-        } else if (parsedContext.mode) {
-             const report: MarketAnalysisResult = parsedContext;
+        } else if ((parsedContext as any).mode) {
+             const report: MarketAnalysisResult = parsedContext as any;
             if (report.mode === ResearchMode.Explore) {
                 reportTypeContext = "The user is currently viewing a high-level 'Explore Ideas' report, which is a simple list of business ideas. It is NOT a deep market analysis. Acknowledge this if the user asks about the 'analysis'.";
             } else {
                 reportTypeContext = "The user is currently viewing a detailed 'Analyze Niche' report. This is a full market analysis.";
             }
+             // Provide the analysis sections verbatim so the model can cite them
+             reportTypeContext += `\n\nUse these sections from the current report as primary context.\nTitle: ${report.generatedTitle}\nExecutive Summary: ${report.executiveSummary}\nMarket Overview: ${report.marketOverview}\nKey Trends: ${report.keyTrends}\nTarget Audience: ${report.targetAudience}\nSWOT: ${report.swotAnalysis}\nIdeas: ${report.businessIdeas}`;
+             if ((parsedContext as any).businessPlan) {
+                const bp = (parsedContext as any).businessPlan as BusinessPlan;
+                reportTypeContext += `\n\nThere is also a generated business plan.\nMission: ${bp.missionStatement}\nValue Proposition: ${bp.valueProposition}\nMarketing: ${bp.marketingStrategy}\nKPIs: ${bp.kpis}`;
+             }
         } else {
             reportTypeContext = "The user is viewing a report or their workspace.";
         }

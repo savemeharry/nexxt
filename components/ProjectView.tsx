@@ -14,7 +14,8 @@ import { PlusIcon } from './icons/PlusIcon';
 import GoalsList from './GoalsList';
 import GoalModal from './GoalModal';
 import { GoalIcon } from './icons/GoalIcon';
-import { GoogleDriveIcon } from './icons/GoogleDriveIcon';
+import { listTextFiles, downloadFile } from '../services/googleDriveService';
+import DriveImportModal from './DriveImportModal';
 import { ShareIcon } from './icons/ShareIcon';
 import { UserGroupIcon } from './icons/UserGroupIcon';
 
@@ -77,6 +78,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
     const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+    const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
 
     useEffect(() => {
         if (initialSelectedAsset) {
@@ -300,7 +302,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
                             </button>
                         </div>
                     </div>
-                     <div className="relative h-8 w-full sm:w-auto">
+                    <div className="relative h-10 w-full sm:w-auto">
                         {/* Files Toolbar */}
                         <div className={`absolute inset-0 flex items-center justify-end gap-2 transition-all duration-300 ${activeView === 'files' ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}`}>
                             <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800/80 rockstar:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 rockstar:border-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 rockstar:hover:bg-neutral-700 transition-colors whitespace-nowrap">
@@ -313,12 +315,28 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
                             <button onClick={handleCreateFolder} className="flex items-center gap-2 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800/80 rockstar:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 rockstar:border-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 rockstar:hover:bg-neutral-700 transition-colors whitespace-nowrap">
                                 <FolderPlusIcon /> New Folder
                             </button>
+                            <button
+                                onClick={() => {
+                                    if (isGoogleSignedIn) onSaveToDrive(project); else alert('Sign in with Google (top-right) to save to Drive.');
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800/80 rockstar:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 rockstar:border-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 rockstar:hover:bg-neutral-700 transition-colors min-w-[140px]"
+                            >
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Google_Drive_icon_%282020%29.svg/1024px-Google_Drive_icon_%282020%29.svg.png?20221103153031" alt="Google Drive" className="w-4 h-4" />
+                                <span>Save to Drive</span>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (!isGoogleSignedIn) { alert('Sign in with Google (top-right).'); return; }
+                                    setIsDriveModalOpen(true);
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800/80 rockstar:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 rockstar:border-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 rockstar:hover:bg-neutral-700 transition-colors min-w-[160px]"
+                            >
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Google_Drive_icon_%282020%29.svg/1024px-Google_Drive_icon_%282020%29.svg.png?20221103153031" alt="Google Drive" className="w-4 h-4" />
+                                <span>Import from Drive</span>
+                            </button>
                         </div>
-                         {/* Tasks Toolbar */}
+                        {/* Tasks Toolbar */}
                         <div className={`absolute inset-0 flex items-center justify-end gap-2 transition-all duration-300 ${activeView === 'tasks' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
-                           <button onClick={() => alert('Import from Google Drive coming soon!')} className="flex items-center gap-2 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800/80 rockstar:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 rockstar:border-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 rockstar:hover:bg-neutral-700 transition-colors whitespace-nowrap">
-                               <GoogleDriveIcon /> Import from Drive
-                           </button>
                            <button onClick={() => alert('Share functionality coming soon!')} className="flex items-center gap-2 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800/80 rockstar:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 rockstar:border-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 rockstar:hover:bg-neutral-700 transition-colors whitespace-nowrap">
                                <ShareIcon /> Share
                            </button>
@@ -393,6 +411,15 @@ const ProjectView: React.FC<ProjectViewProps> = ({ project, users, onUpdateProje
                     )}
                 </div>
             </div>
+            <DriveImportModal
+                isOpen={isDriveModalOpen}
+                onClose={() => setIsDriveModalOpen(false)}
+                onImport={(newFiles) => {
+                    const updatedAssets = [...project.assets, ...newFiles];
+                    onUpdateProject({ ...project, assets: updatedAssets });
+                    setSelectedAsset(newFiles[0]);
+                }}
+            />
         </div>
     );
 };

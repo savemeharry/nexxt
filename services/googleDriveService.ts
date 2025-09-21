@@ -232,3 +232,34 @@ export const uploadProject = async (project: CompanyCardData): Promise<void> => 
         await uploadAsset(asset, projectFolderId);
     }
 };
+
+// -------- Import (Download) from Google Drive ---------
+
+export const listTextFiles = async (pageSize: number = 20) => {
+    if (!gapi.client.getToken()) throw new Error("Please sign in to Google first.");
+    const query = [
+        "trashed=false",
+        "(mimeType contains 'text/' or mimeType='application/json' or mimeType='application/x-markdown' or mimeType='text/markdown' or mimeType='application/xml' or mimeType='text/csv')"
+    ].join(' and ');
+    const res = await gapi.client.drive.files.list({ q: query, pageSize, fields: 'files(id,name,mimeType,size)' });
+    return res.result.files || [];
+};
+
+export const downloadFile = async (fileId: string): Promise<{ name: string; mimeType: string; content: string; size: number } > => {
+    if (!gapi.client.getToken()) throw new Error("Please sign in to Google first.");
+    const metaRes = await gapi.client.drive.files.get({ fileId, fields: 'id,name,mimeType,size' });
+    const { name, mimeType, size } = metaRes.result as { name: string; mimeType: string; size: number };
+    const token = gapi.client.getToken().access_token;
+    const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!contentRes.ok) {
+        const err = await contentRes.text();
+        throw new Error(`Failed to download file: ${err}`);
+    }
+    const text = await contentRes.text();
+    // Encode into data URL (text-based only)
+    const base64 = btoa(unescape(encodeURIComponent(text)));
+    const dataUrl = `data:${mimeType || 'text/plain'};base64,${base64}`;
+    return { name, mimeType: mimeType || 'text/plain', content: dataUrl, size: Number(size) || text.length };
+};
