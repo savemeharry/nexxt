@@ -10,9 +10,19 @@ interface SourceCardProps {
 const getFavicon = (url: string): string => {
     try {
         const domain = new URL(url).hostname;
-        return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+        // Try multiple high-quality favicon services
+        return `https://logo.clearbit.com/${domain}`;
     } catch {
-        return `https://www.google.com/s2/favicons?domain=google.com&sz=32`;
+        return `https://logo.clearbit.com/google.com`;
+    }
+};
+
+const getFallbackFavicon = (url: string): string => {
+    try {
+        const domain = new URL(url).hostname;
+        return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    } catch {
+        return `https://www.google.com/s2/favicons?domain=google.com&sz=64`;
     }
 };
 
@@ -75,17 +85,23 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, index, compact =
             {/* Иконка сайта */}
             <div className="relative shrink-0">
                 <div className="
-                    w-8 h-8 rounded-full overflow-hidden 
+                    w-7 h-7 rounded-full overflow-hidden 
                     bg-neutral-100 dark:bg-neutral-700 rockstar:bg-neutral-800
                     border border-neutral-200 dark:border-neutral-600 rockstar:border-rockstar-700
-                    flex items-center justify-center
+                    flex items-center justify-center p-0.5
                 ">
                     <img
                         src={getFavicon(link)}
                         alt=""
-                        className="w-5 h-5 object-contain"
+                        className="w-full h-full object-cover rounded-full"
                         onError={(e) => {
                             const target = e.target as HTMLImageElement;
+                            // Try fallback favicon service
+                            if (target.src.includes('clearbit')) {
+                                target.src = getFallbackFavicon(link);
+                                return;
+                            }
+                            // If both fail, show default icon
                             target.style.display = 'none';
                             const parent = target.parentElement;
                             if (parent) {

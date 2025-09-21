@@ -82,10 +82,13 @@ export const initClient = async (onAuthChange: (user: GoogleUserProfile | null) 
             try {
                 await fetchUserProfile();
             } catch (error) {
+                console.error('Token validation failed:', error);
                 // Token is invalid, clear it
                 gapi.client.setToken(null);
                 onAuthChange(null);
             }
+        } else {
+            onAuthChange(null);
         }
     } catch (error) {
         console.error("Error during Google Client initialization:", error);

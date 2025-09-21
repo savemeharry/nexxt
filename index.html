@@ -28,6 +28,23 @@
     <style>
       /* Base styles */
       .wysiwyg-editor:focus { outline: none; }
+      
+      /* Shimmer animation for web search */
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      
+      /* Fade in animation for search results */
+      @keyframes fade-in {
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      
+      .animate-fade-in {
+        animation: fade-in 0.3s ease-out forwards;
+        opacity: 0;
+      }
       .wysiwyg-editor h1 { font-size: 2em; font-weight: bold; margin-top: 0.67em; margin-bottom: 0.67em; }
       .wysiwyg-editor h2 { font-size: 1.5em; font-weight: bold; margin-top: 0.83em; margin-bottom: 0.83em; }
       .wysiwyg-editor h3 { font-size: 1.17em; font-weight: bold; margin-top: 1em; margin-bottom: 1em; }

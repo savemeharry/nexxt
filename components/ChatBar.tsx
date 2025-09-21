@@ -7,15 +7,25 @@ import { FileBadgeIcon } from './icons/FileBadgeIcon';
 import { XCircleIcon } from './icons/XCircleIcon';
 import { FlagIcon } from './icons/FlagIcon';
 import { GoalIcon } from './icons/GoalIcon';
+import { SearchIcon } from './icons/SearchIcon';
 
 interface ChatBarProps {
-  onSendMessage: (message: string, attachedFileIds: string[], options: {}) => void;
+  onSendMessage: (message: string, attachedFileIds: string[], options: { webSearch?: boolean }) => void;
   isLoading: boolean;
   onShowChat: () => void;
   hasMessages: boolean;
+  webSearchEnabled?: boolean;
+  onToggleWebSearch?: (enabled: boolean) => void;
 }
 
-const ChatBar: React.FC<ChatBarProps> = ({ onSendMessage, isLoading, onShowChat, hasMessages }) => {
+const ChatBar: React.FC<ChatBarProps> = ({ 
+  onSendMessage, 
+  isLoading, 
+  onShowChat, 
+  hasMessages, 
+  webSearchEnabled = false,
+  onToggleWebSearch 
+}) => {
   const [message, setMessage] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<{id: string, name: string}[]>([]);
   const [contextItem, setContextItem] = useState<{ id: string; type: 'task' | 'goal'; name: string } | null>(null);
@@ -32,7 +42,9 @@ const ChatBar: React.FC<ChatBarProps> = ({ onSendMessage, isLoading, onShowChat,
     }
 
     if (!isLoading && (finalMessage.trim() || attachedFiles.length > 0)) {
-      onSendMessage(finalMessage, attachedFiles.map(f => f.id), {});
+      onSendMessage(finalMessage, attachedFiles.map(f => f.id), {
+        webSearch: webSearchEnabled
+      });
       setMessage('');
       setAttachedFiles([]);
       setContextItem(null);
@@ -149,12 +161,34 @@ const ChatBar: React.FC<ChatBarProps> = ({ onSendMessage, isLoading, onShowChat,
                     isDragOver ? "Drop a task, goal, or file here..." :
                     contextItem ? `Set due date, add subtasks...` :
                     attachedFiles.length > 0 ? "Ask about the files..." :
+                    webSearchEnabled ? "Ask a question (searching web)..." :
                     "Ask a follow-up question..."
                 }
                 className="flex-grow h-full bg-transparent focus:outline-none min-w-[150px]"
                 disabled={isLoading}
+                style={isLoading && webSearchEnabled ? { 
+                    background: 'linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent)',
+                    backgroundSize: '200% 100%',
+                    animation: 'shimmer 2s infinite'
+                } : {}}
             />
         </div>
+
+        {onToggleWebSearch && (
+          <button
+              type="button"
+              onClick={() => onToggleWebSearch(!webSearchEnabled)}
+              className={`flex items-center justify-center h-12 w-12 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-neutral-900 transition-all duration-300 shrink-0 ${
+                  webSearchEnabled 
+                      ? 'bg-brand-100 dark:bg-brand-900/50 rockstar:bg-rockstar-purple/20 text-brand-700 dark:text-brand-300 rockstar:text-rockstar-purple hover:bg-brand-200 dark:hover:bg-brand-800/50 rockstar:hover:bg-rockstar-purple/30 focus:ring-brand-500' 
+                      : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 rockstar:hover:bg-rockstar-900/50 focus:ring-neutral-500'
+              }`}
+              aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
+              title={webSearchEnabled ? "Отключить поиск в интернете" : "Включить поиск в интернете"}
+          >
+              <SearchIcon />
+          </button>
+        )}
 
         <button
             type="submit"

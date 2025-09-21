@@ -198,6 +198,7 @@ const App: React.FC = () => {
   
   // UI State
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(false);
   const [theme, setTheme] = useState<Theme>(() => {
       const storedTheme = localStorage.getItem('nexxtTheme');
       if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'rockstar') {
@@ -564,7 +565,7 @@ const App: React.FC = () => {
   const handleSendChatMessage = async (
       message: string, 
       attachedFileIds: string[] = [],
-      options: { isContinuation?: boolean; contextOverride?: any, fileContentOverride?: string } = {}
+      options: { isContinuation?: boolean; contextOverride?: any, fileContentOverride?: string, webSearch?: boolean } = {}
   ) => {
       if (!googleUser) { alert('Войдите через Google, чтобы использовать чат.'); return; }
       if (!message.trim() && attachedFileIds.length === 0) return;
@@ -1109,13 +1110,27 @@ const App: React.FC = () => {
                     {activeView === 'RESEARCH' && stage === 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
                          <>
                             {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay stage={aiFeedback.stage} files={aiFeedback.files} /> </div> )}
-                            <ChatBar onSendMessage={handleSendChatMessage} isLoading={isChatLoading} onShowChat={() => setIsChatPanelVisible(true)} hasMessages={chatMessages.length > 0} />
+                            <ChatBar 
+                                onSendMessage={handleSendChatMessage} 
+                                isLoading={isChatLoading} 
+                                onShowChat={() => setIsChatPanelVisible(true)} 
+                                hasMessages={chatMessages.length > 0}
+                                webSearchEnabled={webSearchEnabled}
+                                onToggleWebSearch={setWebSearchEnabled}
+                            />
                         </>
                     )}
                     {activeView !== 'DASHBOARD' && activeView !== 'RESEARCH' && !splitViewAsset && !isChatPanelVisible && !pausedEditorSession && (
                          <>
                             {isChatLoading && aiFeedback && ( <div className="mb-2"> <AIFeedbackDisplay stage={aiFeedback.stage} files={aiFeedback.files} /> </div> )}
-                            <ChatBar onSendMessage={handleSendChatMessage} isLoading={isChatLoading} onShowChat={() => setIsChatPanelVisible(true)} hasMessages={chatMessages.length > 0} />
+                            <ChatBar 
+                                onSendMessage={handleSendChatMessage} 
+                                isLoading={isChatLoading} 
+                                onShowChat={() => setIsChatPanelVisible(true)} 
+                                hasMessages={chatMessages.length > 0}
+                                webSearchEnabled={webSearchEnabled}
+                                onToggleWebSearch={setWebSearchEnabled}
+                            />
                         </>
                     )}
                 </div>
