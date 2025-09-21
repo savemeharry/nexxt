@@ -39,8 +39,8 @@ const ChatDisplay: React.FC<ChatDisplayProps> = ({
 
     return (
         <div className="p-4 space-y-6 w-full max-w-4xl mx-auto">
-            {/* Live search indicator */}
-            {isWebSearchActive && (
+            {/* Live search indicator - only show during active search with results */}
+            {isLoading && isWebSearchActive && (searchQueries.length > 0 || foundSources.length > 0) && (
                 <LiveSearchIndicator 
                     isSearching={isLoading}
                     searchQueries={searchQueries}

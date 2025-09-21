@@ -67,26 +67,28 @@ export const LiveSearchIndicator: React.FC<LiveSearchIndicatorProps> = ({
                     <div className="text-xs text-neutral-600 dark:text-neutral-400 mb-1">
                         Найденные источники:
                     </div>
-                    <div className="space-y-1">
-                        {foundSources.slice(0, 5).map((source, index) => (
+                    <div className="flex flex-wrap gap-2">
+                        {foundSources.slice(0, 8).map((source, index) => (
                             <div
                                 key={index}
                                 className="
-                                    flex items-center gap-2 text-xs
-                                    text-neutral-700 dark:text-neutral-300 rockstar:text-neutral-300
+                                    flex items-center gap-2 px-2 py-1 text-xs rounded-full
+                                    bg-green-100 dark:bg-green-900/30 rockstar:bg-green-900/30
+                                    text-green-700 dark:text-green-300 rockstar:text-green-300
+                                    border border-green-200 dark:border-green-700 rockstar:border-green-700
                                     animate-fade-in
                                 "
-                                style={{ animationDelay: `${index * 100}ms` }}
+                                style={{ animationDelay: `${index * 150}ms` }}
                             >
-                                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                                <span className="truncate max-w-xs">
+                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                <span className="font-mono text-xs">
                                     {source}
                                 </span>
                             </div>
                         ))}
-                        {foundSources.length > 5 && (
-                            <div className="text-xs text-neutral-500 dark:text-neutral-400 ml-4">
-                                и ещё {foundSources.length - 5} источников...
+                        {foundSources.length > 8 && (
+                            <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                                и ещё {foundSources.length - 8} источников...
                             </div>
                         )}
                     </div>

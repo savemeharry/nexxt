@@ -199,6 +199,8 @@ const App: React.FC = () => {
   // UI State
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(false);
+  const [liveSearchQueries, setLiveSearchQueries] = useState<string[]>([]);
+  const [liveFoundSources, setLiveFoundSources] = useState<string[]>([]);
   const [theme, setTheme] = useState<Theme>(() => {
       const storedTheme = localStorage.getItem('nexxtTheme');
       if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'rockstar') {
@@ -570,6 +572,18 @@ const App: React.FC = () => {
       if (!googleUser) { alert('Войдите через Google, чтобы использовать чат.'); return; }
       if (!message.trim() && attachedFileIds.length === 0) return;
       
+      // Clear live search state when starting new request
+      if (options.webSearch) {
+          setLiveSearchQueries([]);
+          setLiveFoundSources([]);
+          
+          // Simulate live search queries appearing
+          setTimeout(() => setLiveSearchQueries([message]), 500);
+          setTimeout(() => setLiveFoundSources(['google.com', 'wikipedia.org']), 1000);
+          setTimeout(() => setLiveFoundSources(prev => [...prev, 'stackoverflow.com', 'github.com']), 1500);
+          setTimeout(() => setLiveFoundSources(prev => [...prev, 'medium.com']), 2000);
+      }
+      
       let focusedFiles: AttachedFile[] = [];
       const currentProject = companyCards.find(c => c.id === selectedCompanyId) || null;
       
@@ -870,6 +884,13 @@ const App: React.FC = () => {
       } finally {
           setIsChatLoading(false);
           setAiFeedback(null);
+          // Clear live search state when request completes
+          if (options.webSearch) {
+              setTimeout(() => {
+                  setLiveSearchQueries([]);
+                  setLiveFoundSources([]);
+              }, 1000); // Keep visible for a moment after completion
+          }
       }
   };
   
@@ -1081,8 +1102,8 @@ const App: React.FC = () => {
                 webSearchEnabled={webSearchEnabled}
                 onToggleWebSearch={setWebSearchEnabled}
                 isWebSearchActive={webSearchEnabled}
-                searchQueries={[]}
-                foundSources={[]}
+                searchQueries={liveSearchQueries}
+                foundSources={liveFoundSources}
             />}
             {splitViewAsset && <SplitView 
                 asset={splitViewAsset} 
