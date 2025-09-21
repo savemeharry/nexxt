@@ -293,9 +293,15 @@ const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: 
             try {
                 if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
                 
-                const stream = ai.models.generateContentStream({ model, contents, config });
+                const streamResponse = await ai.models.generateContentStream({ model, contents, config });
                 let fullText = '';
                 let groundingSources: string[] = [];
+                
+                // Debug logging
+                console.log('Stream response type:', typeof streamResponse, streamResponse);
+                
+                // Check if streamResponse has the stream method or is directly iterable
+                const stream = streamResponse.stream || streamResponse;
                 
                 for await (const chunk of stream) {
                     if (activeAbortController?.signal.aborted) throw new Error('ABORTED');
@@ -330,9 +336,35 @@ const generateStreamWithBackoff = async ({ modelCandidates, contents, config }: 
                 lastError = err;
                 const code = err?.error?.code || err?.status;
                 const status = err?.error?.status;
+                const message = err?.message || '';
+                
                 if (err && (err.message === 'ABORTED' || err.message === 'TIMEOUT')) {
                     throw err;
                 }
+                
+                // If streaming fails due to API issues, fallback to regular generateContent
+                if (message.includes('not async iterable') || message.includes('stream')) {
+                    console.warn('Streaming failed, falling back to regular generateContent');
+                    try {
+                        const fallbackResponse = await withRateLimit(() => withTimeout(ai.models.generateContent({ model, contents, config }), REQUEST_TIMEOUT_MS, activeAbortController?.signal));
+                        
+                        // Extract grounding sources from fallback response
+                        const sources = fallbackResponse.groundingMetadata?.groundingChunks
+                            ?.map((chunk: any) => chunk.web?.uri ? new URL(chunk.web.uri).hostname.replace(/^www\./, '') : '')
+                            ?.filter(Boolean) || [];
+                        
+                        // Call callback with final sources
+                        if (onSearchUpdate && sources.length > 0) {
+                            onSearchUpdate([], sources);
+                        }
+                        
+                        return fallbackResponse;
+                    } catch (fallbackErr) {
+                        // If fallback also fails, continue with retry logic
+                        lastError = fallbackErr;
+                    }
+                }
+                
                 if (code === 429 || status === 'RESOURCE_EXHAUSTED') {
                     const base = parseRetryMs(err) ?? 15000;
                     const jitter = Math.floor(Math.random() * 5000);
