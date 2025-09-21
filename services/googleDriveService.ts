@@ -135,7 +135,17 @@ export const signOut = () => {
 
 export const isSignedIn = (): boolean => {
     const token = gapi?.client?.getToken();
-    return token !== null && token.access_token;
+    const isValid = token !== null && token.access_token;
+    
+    // If we have a valid token but no user profile, try to fetch it
+    if (isValid && onAuthChangeCallback) {
+        // Don't block on this, just attempt to refresh user profile in background
+        fetchUserProfile().catch(err => {
+            console.warn('Failed to refresh user profile:', err);
+        });
+    }
+    
+    return isValid;
 };
 
 // ------- Simple Drive rate-limit + retry helpers -------

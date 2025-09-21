@@ -394,7 +394,14 @@ const App: React.FC = () => {
   };
 
   const performResearch = useCallback(async (searchTopic: string, searchMode: ResearchMode, projectContext: CompanyCardData | null = null) => {
-    if (!googleUser) { alert('Войдите через Google, чтобы использовать ресерч.'); setIsLandingPageVisible(false); return; }
+    const isSignedIn = googleDriveService.isSignedIn();
+    console.log('Research auth check:', { googleUser: !!googleUser, isSignedIn, hasUser: !!googleUser || isSignedIn });
+    
+    if (!googleUser && !isSignedIn) { 
+      alert('Войдите через Google, чтобы использовать ресерч.'); 
+      setIsLandingPageVisible(false); 
+      return; 
+    }
     if (!searchTopic.trim()) {
       setError('Please enter a topic to research.');
       return;
@@ -441,7 +448,11 @@ const App: React.FC = () => {
   }, [history, companyCards]);
   
   const handleGeneratePlan = useCallback(async (idea: string) => {
-    if (!googleUser) { alert('Войдите через Google, чтобы продолжить.'); setIsLandingPageVisible(false); return; }
+    if (!googleUser && !googleDriveService.isSignedIn()) { 
+      alert('Войдите через Google, чтобы продолжить.'); 
+      setIsLandingPageVisible(false); 
+      return; 
+    }
     if (!marketAnalysis) return;
     
     setIsLoading(true);
@@ -547,7 +558,10 @@ const App: React.FC = () => {
 
 
   const handleSearch = () => {
-    if (!googleUser) { alert('Войдите через Google, чтобы использовать ресерч.'); return; }
+    if (!googleUser && !googleDriveService.isSignedIn()) { 
+      alert('Войдите через Google, чтобы использовать ресерч.'); 
+      return; 
+    }
     performResearch(topic, mode, researchContextProject);
   };
   
@@ -569,7 +583,10 @@ const App: React.FC = () => {
       attachedFileIds: string[] = [],
       options: { isContinuation?: boolean; contextOverride?: any, fileContentOverride?: string, webSearch?: boolean } = {}
   ) => {
-      if (!googleUser) { alert('Войдите через Google, чтобы использовать чат.'); return; }
+      if (!googleUser && !googleDriveService.isSignedIn()) { 
+        alert('Войдите через Google, чтобы использовать чат.'); 
+        return; 
+      }
       if (!message.trim() && attachedFileIds.length === 0) return;
       
       // Clear live search state when starting new request
@@ -1065,7 +1082,7 @@ const App: React.FC = () => {
 
   return (
     <>
-        {isLandingPageVisible && <LandingPage onEnterApp={() => setIsLandingPageVisible(false)} onStartResearch={(topic, mode) => { if (!googleUser) { setIsLandingPageVisible(false); return; } setTopic(topic); setMode(mode); performResearch(topic, mode); setIsLandingPageVisible(false); setActiveView('RESEARCH'); }} />}
+        {isLandingPageVisible && <LandingPage onEnterApp={() => setIsLandingPageVisible(false)} onStartResearch={(topic, mode) => { if (!googleUser && !googleDriveService.isSignedIn()) { setIsLandingPageVisible(false); return; } setTopic(topic); setMode(mode); performResearch(topic, mode); setIsLandingPageVisible(false); setActiveView('RESEARCH'); }} />}
 
         <div className={`flex flex-col h-screen font-sans antialiased overflow-hidden transition-opacity duration-500 ${isLandingPageVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <Header
