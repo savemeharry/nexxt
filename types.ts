@@ -216,6 +216,8 @@ export interface AttachedFile {
   size: number;
   // content is a base64 encoded string, now optional to avoid localStorage quota issues
   content?: string;
+  // optional source metadata to allow lazy re-download (e.g., from Google Drive)
+  source?: { provider: 'gdrive' | 'local'; fileId?: string };
 }
 
 export interface Folder {

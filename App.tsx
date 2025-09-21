@@ -625,6 +625,15 @@ const App: React.FC = () => {
       // Process files for AI context (extract text from DOCX/PDF/Images via OCR)
         const filesForContext = await Promise.all(
             focusedFiles.map(async (file) => {
+                // Lazy re-download from Google Drive if content is missing
+                if ((!file.content || !file.content.includes(',')) && file.source?.provider === 'gdrive' && file.source.fileId) {
+                    try {
+                        const dl = await googleDriveService.downloadFile(file.source.fileId);
+                        file = { ...file, content: dl.content, mimeType: dl.mimeType, size: dl.size };
+                    } catch (e) {
+                        console.error('Failed to lazy download file from Google Drive', e);
+                    }
+                }
                 const isDocx = file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx');
                 if (isDocx && file.content && typeof mammoth !== 'undefined') {
                     try {
@@ -658,12 +667,16 @@ const App: React.FC = () => {
                         const pdfData = dataUrlToArrayBuffer(file.content);
                         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
                         let textContent = '';
-                        for (let p = 1; p <= pdf.numPages; p++) {
+                        const MAX_PAGES = 30; // guard to avoid huge prompts
+                        const pagesToRead = Math.min(pdf.numPages, MAX_PAGES);
+                        for (let p = 1; p <= pagesToRead; p++) {
                             const page = await pdf.getPage(p);
                             const txt = await page.getTextContent();
                             textContent += txt.items.map((it: any) => it.str).join(' ') + '\n\n';
                         }
-                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(textContent)}`, mimeType: 'text/plain' };
+                        const MAX_CHARS = 40000;
+                        const clipped = textContent.length > MAX_CHARS ? (textContent.slice(0, MAX_CHARS) + `\n\n...[TRUNCATED ${textContent.length - MAX_CHARS} CHARS]...`) : textContent;
+                        return { ...file, content: `data:text/plain;base64,${utf8_to_b64(clipped)}`, mimeType: 'text/plain' };
                     } catch (e) {
                         console.error('Failed to extract text from PDF for AI context:', e);
                         const errorContent = 'Error: Could not read content from this PDF file.';

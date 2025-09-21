@@ -50,6 +50,7 @@ const DriveImportModal: React.FC<DriveImportModalProps> = ({ isOpen, onClose, on
                 mimeType: dl.mimeType,
                 content: dl.content,
                 size: dl.size,
+                source: { provider: 'gdrive', fileId: selectedId }
             };
             onImport([newFile]);
             onClose();
