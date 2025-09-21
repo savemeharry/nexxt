@@ -680,7 +680,7 @@ export const fetchMarketAnalysis = async (topic: string, mode: ResearchMode, con
         : generateExploreIdeasPrompt(topic);
     
     const response = await generateWithBackoff({
-        modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
+        modelCandidates: ["gemini-1.5-flash", "gemini-2.5-flash"],
         contents: prompt,
         config: {
             ...(mode === ResearchMode.Analyze && { tools: [{googleSearch: {}}] }),
@@ -713,7 +713,7 @@ export const fetchBusinessPlan = async (marketContext: string, businessIdea: str
     newRun();
     const prompt = generateBusinessPlanPrompt(marketContext, businessIdea);
     const response = await generateWithBackoff({
-        modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
+        modelCandidates: ["gemini-1.5-flash", "gemini-2.5-flash"],
         contents: prompt,
     });
     return parseBusinessPlan(response.text);
@@ -753,7 +753,7 @@ export const fetchFollowUp = async (
 
         const prompt = generateFollowUpPrompt(question, preparedContext, chatHistory);
         const response = await generateWithBackoff({
-            modelCandidates: ["gemini-2.5-flash", "gemini-1.5-flash"],
+            modelCandidates: ["gemini-1.5-flash", "gemini-2.5-flash"],
             contents: prompt,
             config: {
                 tools: [{googleSearch: {}}]
