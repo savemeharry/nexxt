@@ -624,12 +624,29 @@ const parseMarketAnalysis = (text: string): Omit<MarketAnalysisResult, 'id' | 't
     const tableRaw = getSection('[COMPETITOR_TABLE_START]', '[COMPETITOR_TABLE_END]');
     let competitorTable: ComparisonTable | null = null;
     if (tableRaw) {
-        const rows = tableRaw.split('\n').filter(r => r.trim());
-        if (rows.length > 1) {
-            competitorTable = {
-                headers: rows[0].split('|').map(h => h.trim()),
-                rows: rows.slice(1).map(row => row.split('|').map(cell => cell.trim())),
-            };
+        // Нормализуем переносы: некоторые модели выводят таблицу одной строкой
+        const safe = tableRaw
+            .replace(/\r/g, '')
+            .replace(/\n+/g, '\n')
+            // Если нет переносов, попробуем разбить по заголовкам и регулярному разделителю столбцов
+            .replace(/\s*Competitor\s*\|\s*Strengths\s*\|\s*Weaknesses\s*\|\s*Market Position\s*/i, (m) => `\n${m}\n`);
+
+        const lines = safe.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length >= 2) {
+            const header = lines[0].split('|').map(h => h.trim());
+            const dataRows = lines.slice(1).map(line => {
+                const cells = line.split('|').map(c => c.trim());
+                // Если модель склеила всё в один блок, попробуем fallback-разбиение по двойным пробелам
+                if (cells.length < 4) {
+                    const alt = line.split(/\s\|\s|\s{2,}/).map(c => c.trim()).filter(Boolean);
+                    return alt.length >= 4 ? alt.slice(0,4) : cells;
+                }
+                return cells;
+            }).filter(r => r.length >= 4);
+
+            if (dataRows.length > 0) {
+                competitorTable = { headers: header, rows: dataRows };
+            }
         }
     }
 

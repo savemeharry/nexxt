@@ -30,31 +30,55 @@ export const SwotDisplay: React.FC<SwotDisplayProps> = ({ swotAnalysis }) => {
             Weaknesses: '',
             Opportunities: '',
             Threats: '',
+        } as const;
+
+        const result: Record<keyof typeof sections, string> = {
+            Strengths: '',
+            Weaknesses: '',
+            Opportunities: '',
+            Threats: '',
+        };
+
+        // Поддержка заголовков с маркдауном: "**Strengths:**", "Strengths -", и т.п.
+        const headingRegexes: Record<keyof typeof sections, RegExp> = {
+            Strengths: /^\s*[\*_\-]*\s*strengths\s*[:\-–]?\s*/i,
+            Weaknesses: /^\s*[\*_\-]*\s*weaknesses\s*[:\-–]?\s*/i,
+            Opportunities: /^\s*[\*_\-]*\s*opportunities\s*[:\-–]?\s*/i,
+            Threats: /^\s*[\*_\-]*\s*threats\s*[:\-–]?\s*/i,
         };
 
         const lines = text.split('\n');
         let currentSection: keyof typeof sections | null = null;
 
-        for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (trimmedLine.toLowerCase().startsWith('strengths:')) {
-                currentSection = 'Strengths';
-                sections.Strengths += trimmedLine.substring(10).trim() + '\n';
-            } else if (trimmedLine.toLowerCase().startsWith('weaknesses:')) {
-                currentSection = 'Weaknesses';
-                sections.Weaknesses += trimmedLine.substring(11).trim() + '\n';
-            } else if (trimmedLine.toLowerCase().startsWith('opportunities:')) {
-                currentSection = 'Opportunities';
-                sections.Opportunities += trimmedLine.substring(14).trim() + '\n';
-            } else if (trimmedLine.toLowerCase().startsWith('threats:')) {
-                currentSection = 'Threats';
-                sections.Threats += trimmedLine.substring(8).trim() + '\n';
-            } else if (currentSection && trimmedLine) {
-                sections[currentSection] += trimmedLine + '\n';
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) continue;
+
+            // Проверяем заголовок секции
+            let matchedHeading: keyof typeof sections | null = null;
+            for (const key of Object.keys(sections) as (keyof typeof sections)[]) {
+                if (headingRegexes[key].test(line)) {
+                    matchedHeading = key;
+                    break;
+                }
+            }
+
+            if (matchedHeading) {
+                currentSection = matchedHeading;
+                // Добавим остаток строки после заголовка (если есть)
+                const remainder = line.replace(headingRegexes[matchedHeading], '').trim();
+                if (remainder) {
+                    result[matchedHeading] += remainder + '\n';
+                }
+                continue;
+            }
+
+            if (currentSection) {
+                result[currentSection] += line + '\n';
             }
         }
 
-        return sections;
+        return result;
     };
 
     const swot = parseSwot(swotAnalysis);
