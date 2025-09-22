@@ -203,19 +203,47 @@ Context: ${context}
 
 Please provide a helpful, accurate response. If you find relevant information online, include useful links at the end of your response.
 
-**IMPORTANT**: If you want to include solution cards or links, format them using this structure at the END of your response:
+CRITICAL CAPABILITIES (Virtual Workspace): You CAN perform file and task operations in the project's virtual file system by returning a JSON block with operations. Do NOT say you cannot create or edit files. Prefer executing via operations. If clarification (like destination folder or file name) is needed, return a project clarification block.
 
+File System Operations schema (emit only those needed):
+- CREATE_FILE: { "operation": "CREATE_FILE", "path": "folder/new-name.ext", "content": "<entire file content>" }
+- CREATE_FOLDER: { "operation": "CREATE_FOLDER", "path": "folder/subfolder" }
+- EDIT_FILE: { "operation": "EDIT_FILE", "path": "path/to/file.ext", "content": "<entire new file content>" }
+- RENAME_ASSET: { "operation": "RENAME_ASSET", "path": "path/to/asset", "newName": "New Name.ext" }
+- MOVE_ASSET: { "operation": "MOVE_ASSET", "sourcePath": "path/to/asset", "destinationPath": "target/folder/New Name.ext" }
+- PATCH_FILE (for live-edit in split view): { "operation": "PATCH_FILE", "path": "path/to/file.ext", "patches": [ {"type":"INSERT", "afterLineNumber": 10, "content": ["new line 1","new line 2"]}, {"type":"REPLACE", "lineNumber": 7, "content": ["replacement line"]}, {"type":"DELETE", "lineNumber": 12, "count": 2 } ] }
+
+Notes:
+- To duplicate a file, use CREATE_FILE with the new name and reuse the source file's content (provided in focusedFiles[].content or extractedText).
+- For Markdown/text edits, always send the full updated content via EDIT_FILE.
+- Paths must use names from the provided project assets. If path is unknown, ask via project clarification instead of guessing.
+- When a single file is open in split view (context contains focusedFiles and may indicate isSplitView), PREFER PATCH_FILE with minimal diff patches for live preview. Use EDIT_FILE only when patching is not feasible.
+
+Task/Goal Operations (optional):
+- CREATE_GOAL: { "operation": "CREATE_GOAL", "title": "...", "description": "..." }
+- CREATE_TASK: { "operation": "CREATE_TASK", "goalTitle": "...", "title": "...", "description": "...", "priority": "Low|Medium|High|Urgent", "dueDate"?: "YYYY-MM-DD", "assigneeName"?: "..." }
+- EDIT_TASK: { "operation": "EDIT_TASK", "goalTitle": "...", "taskTitle": "...", "newTitle"?: "...", "newDescription"?: "...", "newPriority"?: "...", "newDueDate"?: "YYYY-MM-DD", "newAssigneeName"?: "..." }
+- ADD_SUBTASK: { "operation": "ADD_SUBTASK", "goalTitle": "...", "taskTitle": "...", "subtaskText": "..." }
+- SET_TASK_STATUS: { "operation": "SET_TASK_STATUS", "goalTitle": "...", "taskTitle": "...", "newStatus": "To Do|In Progress|Done" }
+
+OUTPUT RULES:
+1) First, answer the user's request succinctly in the same language as the user's query.
+2) If any file/task action is appropriate, append a JSON array between these exact tags:
+[FILE_OPERATIONS_START]
+<JSON array of operations>
+[FILE_OPERATIONS_END]
+3) If you need the user to choose a project (or missing path/name), append options between these tags instead and do NOT invent paths:
+[PROJECT_CLARIFICATION_START]
+[{"id":"<projectId>","title":"<project title>"}]
+[PROJECT_CLARIFICATION_END]
+4) If you include solution cards or links, format them at the END using:
 [SOLUTION_CARDS_START]
 [
-  {
-    "title": "Title of the resource",
-    "description": "Brief description",
-    "link": "https://example.com"
-  }
+  {"title":"Title","description":"Brief","link":"https://example.com"}
 ]
 [SOLUTION_CARDS_END]
 
-Respond naturally and conversationally. Use web search when helpful for current information.`;
+Respond naturally. Use web search when helpful for current information. Avoid statements like "I cannot modify files"; use the operation block instead.`;
 };
 
 const flattenAssetsForAI = (assets: Asset[], path = ''): string => {
