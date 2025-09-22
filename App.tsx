@@ -1135,6 +1135,21 @@ const App: React.FC = () => {
                 onMarkAsUnsaved={handleMarkAsUnsaved}
                 isPausedSession={!!pausedEditorSession}
                 onCloseSplitView={() => setSplitViewAsset(null)}
+                currentFilePath={(function getPath(){
+                    if (!selectedCompany || !splitViewAsset) return undefined;
+                    const findPathById = (assets: Asset[], id: string, prefix = ''): string | null => {
+                        for (const a of assets) {
+                            const currentPath = prefix ? `${prefix}/${a.name}` : a.name;
+                            if (a.id === id) return currentPath;
+                            if (a.type === 'folder') {
+                                const child = findPathById(a.children, id, currentPath);
+                                if (child) return child;
+                            }
+                        }
+                        return null;
+                    };
+                    return findPathById(selectedCompany.assets as Asset[], splitViewAsset.id) || splitViewAsset.name;
+                })()}
             />}
             {isProjectModalOpen && <ProjectModal onClose={() => { setIsProjectModalOpen(false); setEditingCard(null); }} onSave={handleSaveCard} initialData={editingCard} />}
             {isArchiveModalOpen && <TrashModal isOpen={isArchiveModalOpen} onClose={() => setIsArchiveModalOpen(false)} cards={archivedCards} onRestore={handleUnarchiveCard} onDeletePermanently={handleDeletePermanently} onEmptyTrash={handleClearArchive} />}

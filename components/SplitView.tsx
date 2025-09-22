@@ -89,6 +89,7 @@ interface SplitViewProps {
     onMarkAsUnsaved?: () => void;
     isPausedSession?: boolean;
     onCloseSplitView?: () => void;
+    currentFilePath?: string;
 }
 
 const SplitView: React.FC<SplitViewProps> = ({ 
@@ -103,7 +104,8 @@ const SplitView: React.FC<SplitViewProps> = ({
     onClearPausedSession,
     onMarkAsUnsaved,
     isPausedSession = false,
-    onCloseSplitView
+    onCloseSplitView,
+    currentFilePath
 }) => {
     const [localAsset, setLocalAsset] = useState(asset);
     const [animatedLines, setAnimatedLines] = useState<{ text: string; state: string }[] | null>(null);
@@ -172,7 +174,7 @@ const SplitView: React.FC<SplitViewProps> = ({
             
         const saveOperation: FileOperation = {
             operation: 'EDIT_FILE',
-            path: updatedAsset.name,
+            path: currentFilePath || updatedAsset.name,
             content: content,
         };
         onSaveFile([saveOperation]);
@@ -195,7 +197,7 @@ const SplitView: React.FC<SplitViewProps> = ({
             
         const saveOperation: FileOperation = {
             operation: 'EDIT_FILE',
-            path: localAssetRef.current.name,
+            path: currentFilePath || localAssetRef.current.name,
             content: content,
         };
         onSaveFile([saveOperation]);

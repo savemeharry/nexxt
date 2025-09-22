@@ -219,6 +219,15 @@ Notes:
 - Paths must use names from the provided project assets. If path is unknown, ask via project clarification instead of guessing.
 - When a single file is open in split view (context contains focusedFiles and may indicate isSplitView), PREFER PATCH_FILE with minimal diff patches for live preview. Use EDIT_FILE only when patching is not feasible.
 
+Split View Defaults:
+- If context indicates split view (isSplitView=true and focusedFiles[0] present), target PATCH_FILE to the currently open file by default.
+- Set PATCH_FILE.path to focusedFiles[0].path if available, otherwise to focusedFiles[0].name.
+- Do not patch or edit other files unless the user explicitly names a different file.
+
+Idempotency and Conflicts:
+- Do not send both PATCH_FILE and EDIT_FILE for the same change. Prefer a single PATCH_FILE.
+- When replacing an introduction/section, ensure the old section is removed and only the new one remains (use REPLACE or DELETE+INSERT as needed, avoid duplicates).
+
 Task/Goal Operations (optional):
 - CREATE_GOAL: { "operation": "CREATE_GOAL", "title": "...", "description": "..." }
 - CREATE_TASK: { "operation": "CREATE_TASK", "goalTitle": "...", "title": "...", "description": "...", "priority": "Low|Medium|High|Urgent", "dueDate"?: "YYYY-MM-DD", "assigneeName"?: "..." }
